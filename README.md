@@ -1,14 +1,13 @@
 # Jet Force Capricorn
 
 A native PC and Steam Deck port of **Jet Force Gemini**, with widescreen support,
-smooth interpolated rendering, modern controls and optional quality-of-life improvements.
+smooth interpolated rendering, modern controls and loads of optional quality-of-life improvements.
 
 ## Download and play
 
 Get the latest Windows portable EXE or Linux AppImage from
 [Releases](https://github.com/riseio/Jet-Force-Capricorn/releases).
-You need your own **Jet Force Gemini (USA), revision 0** ROM in big-endian `.z64`
-format. Select it when prompted on first launch.
+You need your own **Jet Force Gemini (USA), revision 0** ROM in `.z64` format. Select it when prompted on first launch.
 
 - **Windows:** Run `JetForceCapricorn-Portable.exe` from a writable folder.
   Saves, settings and caches stay in the adjacent `data` folder. Keep that folder
@@ -22,24 +21,21 @@ format. Select it when prompted on first launch.
 
 Enhanced textures are prepared locally from your ROM and cached for later
 launches. Switch them in **Graphics > Enhanced Textures**, or press View / Select
-on a controller to compare them during play.
-
-Supported ROM size: 33,554,432 bytes.
-SHA-1: `493ced9008dbe932d6e91179b68e8630cf23a023`.
+on a controller to swap them in at anytime during play.
 
 ## Enhancements
 
 - Widescreen and ultrawide support, with adapted menus and HUD placement.
+- A complete control overhaul. The original controls are completely replaced with modern twinstick.
 - Higher resolutions, anti-aliasing and interpolated rendering, with display-refresh
   and manual frame-rate settings.
 - Mouse aiming and dual-stick controls: move and strafe with the left stick,
-  look and aim with the right stick.
+  look and aim with the right stick. You can also now manual aim while crouched.
 - Remappable controls, mouse and stick sensitivity, deadzone, inversion and rumble settings.
-- Sniper aiming sensitivity scales with zoom. Zoom is active only while holding Aim.
-- Optional cleaned textures that preserve the original surface layouts and transparency.
+- Sniper aiming sensitivity scales with zoom.
 - Adjustable draw distance and fog strength.
 - Persistent save states alongside the original game saves.
-- Direct weapon shortcuts, quick throwable use and a matching item icon/ammo counter.
+- Direct weapon shortcuts, quick throwable grenades.
 
 ## Quality of life
 
@@ -49,7 +45,7 @@ configuration; existing preferences are kept.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Modern Health Display | Off | Shows the current health container as a green percentage beside yellow reserve-container squares, above the weapon panel. |
+| Modern Health Display | Off | Shows the current health container as metroid style capsule healthbar above the weapon panel. |
 | Room Collectible Counters | On | Shows your Mizar token total and Tribals still missing in the current room. Lost Tribals remain counted as missing. |
 | Area Collectible Tracker | On | Shows remaining keys, including coloured keys, spaceship parts and Floyd robot components, including chest contents and event rewards. Icons stack above tokens and Tribals; collected categories disappear. |
 | Weapon Shortcut HUD | On | Shows the four assigned weapon icons in a top-right D-pad, with numbers 1-4 for keyboard shortcuts. |
@@ -57,20 +53,20 @@ configuration; existing preferences are kept.
 | Invulnerable Tribals | Off | Prevents Tribals from being killed. |
 | Unlimited Lives | On | Restarts after death as though an extra life were available, without consuming continues. |
 | Persistent Tribal Rescues | Off | Keeps individually rescued Tribals rescued when revisiting levels in the same save slot. |
-| Final Tribal Requirement | Original | Choose the original rescued-Tribal requirement or reduce the final-access threshold to 70%, 50% or 25%. True 100% completion remains separate. |
+| Final Tribal Requirement | Original | Choose the original rescued-Tribal requirement or reduce the final-access threshold to 70%, 50% or 25%. True 100% completion remains separate so you can still go for that if you really want. |
 | Skip Seen Ship Landings | Off | Automatically skips a ship landing after you have watched that landing to completion in the same save slot. |
 | Quick Character Switching | Off | Switches to the next unlocked character at that character's saved location without returning to space. |
 | Skip Seen Character Travel | Off | Skips repeat character-selection travel sequences. |
-| Sprint Mode | Off | Choose Hold or Toggle for up to 1.5x grounded movement speed. Aiming and incompatible movement states cancel sprint. |
+| Sprint Mode | Off | Choose Hold or Toggle for up to 1.5x grounded movement speed. |
 | Double Pistol Recharge | Off | Recharges the default pistol twice as fast, with its normal firing rate. |
-| Double Ammo Pickups | Off | Doubles small, large, enemy-dropped and duplicate-weapon ammo awards, capped at normal capacity. Capacity upgrades retain their normal effect. |
-| Persistent Dropped Pickups | Off | Keeps dropped health, ammo and collectible heads until collected or the map is left. Ordinary debris still fades. |
+| Double Ammo Pickups | Off | Doubles small, large, enemy-dropped and duplicate-weapon ammo awards, capped at normal capacity. |
+| Persistent Dropped Pickups | Off | Keeps dropped health, ammo and collectible heads until collected or the map is left. |
 | Mission Complete Refill | On | Refills health and owned weapon ammo when you dismiss the mission-complete screen. |
 | Double Enemy Drop Chance | On | Raises random enemy weapon/ammo drop chance from one in three to two in three. Guaranteed rewards and pickup quantities stay the same. |
-| Fast Throws | On | Halves throwable animation, release and recovery time. Projectile speed, fuses and charging keep their normal timing. |
-| Halo-style Health | Off | After 30 damage-free gameplay seconds, restores missing health every five seconds over the next 60 seconds. Damage restarts the delay; pauses and cutscenes stop the timer. |
+| Fast Throws | On | Halves throwables animation, release and recovery times. This makes throwing grenades feel way better and more useful. |
+| Halo-style Health | Off | After 30 damage-free gameplay seconds, restores missing health every five seconds over the next 60 seconds. |
 | Ship Part Scanner | Off | Choose Audio, Visual or Audio + Visual guidance towards missing ship parts. Visual hints also need Show Guidance Text. |
-| Show Guidance Text | Off | Shows bottom-left ship-part scanner hints and final Tribal-requirement guidance. |
+| Show Guidance Text | Off | Shows bottom-left ship-part scanner hints and final Tribal-requirement guidance. I use this for debugging so you likely won't need it. |
 
 ### Weapon shortcuts and throwables
 
@@ -83,6 +79,7 @@ are the default. To assign another, equip it, hold **Ctrl / L4**, then press
 **G / Y**. Grenades, shurikens, fish food, plasma bombs, remote mines and cluster
 bombs can be assigned; flares keep their normal weapon controls. The bottom-left
 icon and count show the assigned item and remaining ammo.
+Because Flares have their arm and throw stages separate I didn't include them... soz
 
 ### Saving
 
@@ -140,10 +137,6 @@ Use Steam's **Gamepad** layout. These are the default in-game bindings:
 | L4 | Hold as the shortcut modifier |
 | R4 | Open / close settings |
 | L5 / R5 | Save / restore state |
-
-Custom bindings take precedence. For controllers without rear buttons, assign
-Shortcut Modifier and settings/save actions in Bindings. Steam Input mappings
-can also override the game's defaults.
 
 ## Disclaimer
 
