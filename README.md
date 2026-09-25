@@ -140,22 +140,27 @@ Use Steam's **Gamepad** layout. These are the default in-game bindings:
 
 ## Disclaimer
 
-Jet Force Capricorn is an unofficial fan project, not affiliated with or endorsed
-by Nintendo, Rare or Microsoft. Jet Force Gemini and its original content belong
-to their respective rights holders.
+Jet Force Capricorn is an unofficial fan project not associated with or containing the original game in any way.
+It is not affiliated with, endorsed by, or sponsored by Nintendo, Rare, Microsoft, or any other
+rights holder.
 
-You must supply your own lawfully obtained ROM of the supported game. ROMs and
-extracted original game assets are not distributed with this project. Please do
-not upload them to the repository or its issues.
+**We do not provide the original game.** This repository and its downloads do
+not include a Jet Force Gemini ROM, music, sounds, textures, models, levels, or other
+extracted original game assets. We do not provide ROM downloads or links to them.
+Game assets are loaded or generated locally from the ROM you supply.
+
+**You must own a legally purchased copy of Jet Force Gemini and provide your own
+lawfully obtained ROM dump** of the supported US revision-0 release to use this
+project. The port is not a substitute for owning the original game. Do not
+upload or share ROMs or extracted game assets in this repository or its issues.
+
+Jet Force Gemini, its characters, names, artwork, music, trademarks and all other
+original game content belong to their respective copyright and trademark
+holders. We claim no ownership of that content. This project grants no rights
+to copy or redistribute the original game or its assets.
 
 ## Project
 
-Built on [N64Recomp](https://github.com/N64Recomp/N64Recomp),
-[N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime),
-[RT64](https://github.com/rt64/rt64),
-[RecompFrontend](https://github.com/N64Recomp/RecompFrontend) and research from
-the [Jet Force Gemini decompilation](https://github.com/ryan-myers/jet-force-gemini).
-Dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Built with N64Recomp, N64ModernRuntime, RecompFrontend and RT64.
 
-[Report a bug](https://github.com/riseio/Jet-Force-Capricorn/issues) with your
-version number, operating system and steps to reproduce it.
+[Report a bug](https://github.com/riseio/Jet-Force-Capricorn/issues) When raising issues please make sure you include the build version you experienced the bug in ^_^
