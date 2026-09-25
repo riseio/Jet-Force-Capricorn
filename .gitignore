@@ -1,0 +1,12 @@
+/build/
+/data/
+/OriginalGame/
+/RecompiledFuncs/
+*.z64
+*.n64
+*.v64
+*.sav
+*.jfcstate
+*.log
+*.dmp
+*.tmp

@@ -1,0 +1,174 @@
+diff --git a/re-spirv.cpp b/re-spirv.cpp
+index 26f70e5..d8e8ace 100644
+--- a/re-spirv.cpp
++++ b/re-spirv.cpp
+@@ -1,3 +0,0 @@
+-//
+-// re-spirv
+-//
+@@ -6 +2,0 @@
+-//
+@@ -21,2 +17 @@ namespace respv {
+-    // Common.
+-    
++
+@@ -122,0 +118,2 @@ namespace respv {
++        case SpvOpIsNan:
++        case SpvOpIsInf:
+@@ -263,0 +261,2 @@ namespace respv {
++        case SpvOpIsNan:
++        case SpvOpIsInf:
+@@ -490,2 +488,0 @@ namespace respv {
+-    // Shader
+-
+@@ -493 +490 @@ namespace respv {
+-        // Empty.
++
+@@ -548 +544,0 @@ namespace respv {
+-        // Parse all instructions.
+@@ -610 +605,0 @@ namespace respv {
+-                // Check if it's an OpConstant of Int type so it can be reused on switches.
+@@ -619,2 +614 @@ namespace respv {
+-            
+-            // Every operand should be adjacent to this instruction.
++
+@@ -651 +644,0 @@ namespace respv {
+-            // This instruction should be adjacent to every label referenced. OpPhi is excluded from this.
+@@ -671 +663,0 @@ namespace respv {
+-            // Parse parented blocks of OpPhi to indicate the dependency.
+@@ -689 +681 @@ namespace respv {
+-            // Parse decorations.
++
+@@ -711 +703 @@ namespace respv {
+-            // Check if a switch is used in the shader.
++
+@@ -730 +722 @@ namespace respv {
+-            // Empty.
++
+@@ -751 +743 @@ namespace respv {
+-        // Count the in and out degrees for all instructions.
++
+@@ -766 +757,0 @@ namespace respv {
+-        // Make a copy of the degrees as they'll be used to perform a topological sort.
+@@ -771 +761,0 @@ namespace respv {
+-        // The first nodes to be processed should be the ones with no incoming connections.
+@@ -787 +776,0 @@ namespace respv {
+-            // Look for the adjacents and reduce their degree. Push it to the stack if their degree reaches zero.
+@@ -801 +790 @@ namespace respv {
+-        
++
+@@ -824,2 +813 @@ namespace respv {
+-        
+-        // Rebuild the instruction order vector with the sorted indices.
++
+@@ -859,2 +846,0 @@ namespace respv {
+-    // Optimizer
+-
+@@ -928 +913,0 @@ namespace respv {
+-            // Instruction's been deleted.
+@@ -935 +919,0 @@ namespace respv {
+-            // When nothing uses the result from this instruction anymore, we can delete it. Push any operands it uses into the stack as well to reduce their out degrees.
+@@ -1016 +999,0 @@ namespace respv {
+-            // Eliminate the decorator instruction as well.
+@@ -1032 +1015 @@ namespace respv {
+-            // Parse the known type of constants. Any other types will be considered as variable.
++
+@@ -1231 +1214 @@ namespace respv {
+-            // Resolve as constant if Phi operator was compacted to only one option.
++
+@@ -1242 +1225 @@ namespace respv {
+-            // It's not known how to evaluate the instruction, consider the result a variable.
++
+@@ -1268,4 +1250,0 @@ namespace respv {
+-            // If a label's degree becomes 0, eliminate all the instructions of the block.
+-            // Eliminate as many instructions as possible until finding the terminator of the block.
+-            // When finding the terminator, look at the labels it has and push them to the stack to
+-            // reduce their degrees as well.
+@@ -1281 +1259,0 @@ namespace respv {
+-                    // If the instruction has labels it can reference, we push the labels to reduce their degrees as well.
+@@ -1292 +1269,0 @@ namespace respv {
+-                    // If the instruction has operands, decrease their degree.
+@@ -1322,2 +1299 @@ namespace respv {
+-        // For each type of supported terminator, check if the operands can be resolved into constants.
+-        // If they can be resolved, eliminate any other branches that don't pass the condition.
++
+@@ -1330,2 +1305,0 @@ namespace respv {
+-        // Both instructions share that the second word is the operator they must use to resolve the condition.
+-        // Operator can't be anything but a constant to be able to resolve a terminator.
+@@ -1337 +1311 @@ namespace respv {
+-        
++
+@@ -1339 +1313 @@ namespace respv {
+-            // Branch conditional only needs to choose either label depending on whether the result is true or false.
++
+@@ -1349 +1322,0 @@ namespace respv {
+-            // If there's a selection merge before this branch, we place the unconditional branch in its place.
+@@ -1363 +1335,0 @@ namespace respv {
+-            // Make the final label the new default case and reduce the word count.
+@@ -1367 +1338,0 @@ namespace respv {
+-            // Eliminate any remaining words on the block.
+@@ -1373,2 +1344 @@ namespace respv {
+-            // Switch must compare the integer result of the operator to all the possible labels.
+-            // If the label is not as possible result, then reduce its block's degree.
++
+@@ -1384,2 +1353,0 @@ namespace respv {
+-            // If none are chosen, the default label is selected. Otherwise, reduce the block's degree
+-            // for the default label.
+@@ -1393 +1360,0 @@ namespace respv {
+-            // Make the final label the new default case and reduce the word count.
+@@ -1398 +1364,0 @@ namespace respv {
+-            // Increase the degree of the default constant that was chosen so it's not considered as dead code.
+@@ -1402 +1367,0 @@ namespace respv {
+-            // Eliminate any remaining words on the block.
+@@ -1408 +1372,0 @@ namespace respv {
+-        // The condition operator can be discarded.
+@@ -1416 +1380 @@ namespace respv {
+-        // Do a backwards search first to find out what label this instruction belongs to.
++
+@@ -1448 +1411,0 @@ namespace respv {
+-            // Label's been eliminated. Skip it.
+@@ -1454 +1416,0 @@ namespace respv {
+-            // While the label may not have been eliminated, verify its terminator is still pointing to this block.
+@@ -1476 +1437,0 @@ namespace respv {
+-            // The preceding block did not have any reference to this block. Skip it.
+@@ -1482 +1442,0 @@ namespace respv {
+-            // Copy the words.
+@@ -1488 +1447,0 @@ namespace respv {
+-        // Patch in the new word count.
+@@ -1492 +1450,0 @@ namespace respv {
+-        // Delete any of the remaining words.
+@@ -1513 +1470,0 @@ namespace respv {
+-            // Instruction has been deleted.
+@@ -1534 +1490,0 @@ namespace respv {
+-                // Check if any of the operands isn't a constant.
+@@ -1552 +1507,0 @@ namespace respv {
+-                        // It shouldn't be possible for an operand to not be solved, but OpPhi can do so because previous blocks might've been deleted.
+@@ -1567 +1521,0 @@ namespace respv {
+-                // The result can only be evaluated if all operands are constant.
+@@ -1594 +1548 @@ namespace respv {
+-                // This decoration has already been deleted.
++
+@@ -1601 +1554,0 @@ namespace respv {
+-            // The result has been deleted, so we delete the decoration as well.
+@@ -1615 +1568 @@ namespace respv {
+-                // This operation has already been deleted.
++
+@@ -1632 +1584,0 @@ namespace respv {
+-        // Copy the header.
+@@ -1638 +1589,0 @@ namespace respv {
+-        // Write out all the words for all the instructions and skip any that were marked as deleted.
+@@ -1642 +1592,0 @@ namespace respv {
+-            // Instruction has been deleted.
+@@ -1647 +1596,0 @@ namespace respv {
+-            // Check if the instruction should be ignored.
+@@ -1653 +1601,0 @@ namespace respv {
+-            // Copy all the words of the instruction.
+@@ -1686,4 +1633,0 @@ namespace respv {
+-        // FIXME: For some reason, it seems that based on the order of the resolution, OpPhis can be compacted
+-        // before all their preceding blocks have been evaluated in time whether they should be deleted or not.
+-        // This pass merely re-runs the compaction step as a safeguard to remove any stale references. There's
+-        // potential for further optimization if this is fixed properly.
+@@ -1700 +1644 @@ namespace respv {
+-};
+\ No newline at end of file
++};

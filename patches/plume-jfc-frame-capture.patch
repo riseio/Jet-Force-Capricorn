@@ -1,0 +1,2737 @@
+diff --git a/examples/cube/main.cpp b/examples/cube/main.cpp
+index 9668fe5..be4b435 100644
+--- a/examples/cube/main.cpp
++++ b/examples/cube/main.cpp
+@@ -1,6 +0,0 @@
+-//
+-// plume - Cube Texture Example
+-//
+-// Demonstrates cube texture creation and sampling
+-//
+-
+@@ -44,2 +37,0 @@ namespace plume {
+-    // Toggle between TextureTypeCube (1 cube = 6 faces) and TextureTypeCubeArray (2 cubes = 12 faces)
+-    // This validates that both code paths in mapTextureType work correctly
+@@ -50 +41,0 @@ namespace plume {
+-    // Simple 4x4 matrix for inverse view-projection
+@@ -74 +65 @@ namespace plume {
+-            // Forward vector
++
+@@ -79 +69,0 @@ namespace plume {
+-            // Right vector (cross product of forward and up)
+@@ -86 +75,0 @@ namespace plume {
+-            // True up vector
+@@ -158 +146,0 @@ namespace plume {
+-        // Cube texture resources
+@@ -167 +154,0 @@ namespace plume {
+-        // Camera
+@@ -173,3 +159,0 @@ namespace plume {
+-    // Generate a procedural color for each cube face
+-    // cubeIndex: which cube in the array (0 or 1)
+-    // faceIndex: which face of the cube (0-5: +X, -X, +Y, -Y, +Z, -Z)
+@@ -179,2 +162,0 @@ namespace plume {
+-        // Different color schemes for each cube
+-        // Cube 0: warm colors, Cube 1: cool colors (inverted/shifted)
+@@ -182 +164 @@ namespace plume {
+-            // Cube 0: Original warm scheme
++
+@@ -184,6 +166,6 @@ namespace plume {
+-                {1.0f, 0.3f, 0.3f},  // +X: Red
+-                {0.3f, 1.0f, 0.3f},  // -X: Green
+-                {0.3f, 0.3f, 1.0f},  // +Y: Blue (sky)
+-                {0.4f, 0.25f, 0.1f}, // -Y: Brown (ground)
+-                {1.0f, 1.0f, 0.3f},  // +Z: Yellow
+-                {1.0f, 0.3f, 1.0f},  // -Z: Magenta
++                {1.0f, 0.3f, 0.3f},
++                {0.3f, 1.0f, 0.3f},
++                {0.3f, 0.3f, 1.0f},
++                {0.4f, 0.25f, 0.1f},
++                {1.0f, 1.0f, 0.3f},
++                {1.0f, 0.3f, 1.0f},
+@@ -191 +173 @@ namespace plume {
+-            // Cube 1: Cool/inverted scheme (for cube array testing)
++
+@@ -193,6 +175,6 @@ namespace plume {
+-                {0.3f, 1.0f, 1.0f},  // +X: Cyan
+-                {1.0f, 0.3f, 0.5f},  // -X: Pink
+-                {0.5f, 0.8f, 0.3f},  // +Y: Lime
+-                {0.2f, 0.2f, 0.3f},  // -Y: Dark blue-gray
+-                {0.8f, 0.5f, 0.2f},  // +Z: Orange
+-                {0.4f, 0.3f, 0.8f},  // -Z: Purple
++                {0.3f, 1.0f, 1.0f},
++                {1.0f, 0.3f, 0.5f},
++                {0.5f, 0.8f, 0.3f},
++                {0.2f, 0.2f, 0.3f},
++                {0.8f, 0.5f, 0.2f},
++                {0.4f, 0.3f, 0.8f},
+@@ -239 +220,0 @@ namespace plume {
+-        // Create cube texture (or cube array if NumFaces > 6)
+@@ -243,2 +224,2 @@ namespace plume {
+-            1,         // mip levels
+-            NumFaces,  // 6 faces per cube * NumCubes
++            1,
++            NumFaces,
+@@ -252,2 +232,0 @@ namespace plume {
+-        // Create a cube texture view
+-        // When using cube array, view the SECOND cube (index 6-11) to prove the array works
+@@ -255,2 +234,2 @@ namespace plume {
+-        viewDesc.arrayIndex = UseCubeArray ? 6 : 0;  // Start at cube 1 if array, else cube 0
+-        viewDesc.arraySize = 6;  // View one cube (6 faces)
++        viewDesc.arrayIndex = UseCubeArray ? 6 : 0;
++        viewDesc.arraySize = 6;
+@@ -262 +240,0 @@ namespace plume {
+-        // Create staging buffer and upload face data
+@@ -280 +257,0 @@ namespace plume {
+-        // Upload to GPU
+@@ -296 +273 @@ namespace plume {
+-                CubeMapSize,  // rowWidth is in pixels, not bytes
++                CubeMapSize,
+@@ -302,2 +279,2 @@ namespace plume {
+-                0,     // mipLevel
+-                face   // arrayIndex (each face is a different array slice)
++                0,
++                face
+@@ -315 +292,2 @@ namespace plume {
+-        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, nullptr, 0, nullptr, 0, ctx.m_fence.get());
++        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, nullptr,
++            nullptr, 0, nullptr, 0, ctx.m_fence.get());
+@@ -322 +300 @@ namespace plume {
+-        // Create sampler
++
+@@ -331 +308,0 @@ namespace plume {
+-        // Create constant buffer for inverse view-projection matrix
+@@ -336 +312,0 @@ namespace plume {
+-        // Create descriptor set layout and set
+@@ -338,2 +314,2 @@ namespace plume {
+-            RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, 1),  // binding 0
+-            RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 1, 1)   // binding 1
++            RenderDescriptorRange(RenderDescriptorRangeType::TEXTURE, 0, 1),
++            RenderDescriptorRange(RenderDescriptorRangeType::SAMPLER, 1, 1)
+@@ -347 +322,0 @@ namespace plume {
+-        // Create pipeline layout
+@@ -360 +334,0 @@ namespace plume {
+-        // Create shaders
+@@ -387 +360,0 @@ namespace plume {
+-        // Create graphics pipeline (no vertex input - fullscreen triangle)
+@@ -437,2 +410 @@ namespace plume {
+-        // Update time for camera rotation
+-        ctx.m_time += 0.016f;  // ~60fps
++        ctx.m_time += 0.016f;
+@@ -442 +413,0 @@ namespace plume {
+-        // Acquire swapchain image
+@@ -446 +416,0 @@ namespace plume {
+-        // Calculate inverse view-projection matrix
+@@ -451 +420,0 @@ namespace plume {
+-        // Camera looking from origin with yaw/pitch rotation
+@@ -461 +429,0 @@ namespace plume {
+-        // Update constant buffer
+@@ -466 +433,0 @@ namespace plume {
+-        // Begin command recording
+@@ -481 +447,0 @@ namespace plume {
+-        // Draw cube texture
+@@ -487 +452,0 @@ namespace plume {
+-        // Draw fullscreen triangle (3 vertices, no vertex buffer)
+@@ -495 +459,0 @@ namespace plume {
+-        // Create semaphores if needed
+@@ -500 +463,0 @@ namespace plume {
+-        // Submit and present
+@@ -503,0 +467,2 @@ namespace plume {
++        const RenderBarrierStages waitSemaphoreStages =
++            RenderBarrierStage::GRAPHICS;
+@@ -505 +470,2 @@ namespace plume {
+-        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore, 1, &signalSemaphore, 1, ctx.m_fence.get());
++        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore,
++            &waitSemaphoreStages, 1, &signalSemaphore, 1, ctx.m_fence.get());
+@@ -554 +519,0 @@ namespace plume {
+-        // Cleanup
+@@ -565 +530,5 @@ namespace plume {
+-            ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore, 1, nullptr, 0, ctx.m_fence.get());
++            const RenderBarrierStages waitSemaphoreStages =
++                RenderBarrierStage::GRAPHICS;
++            ctx.m_commandQueue->executeCommandLists(&cmdList, 1,
++                &waitSemaphore, &waitSemaphoreStages, 1, nullptr, 0,
++                ctx.m_fence.get());
+diff --git a/examples/triangle/main.cpp b/examples/triangle/main.cpp
+index fc34404..446debf 100644
+--- a/examples/triangle/main.cpp
++++ b/examples/triangle/main.cpp
+@@ -1,4 +0,0 @@
+-//
+-// plume
+-//
+-
+@@ -29 +24,0 @@
+-// Function prototype for creating the Metal interface on Apple platforms
+@@ -56 +50,0 @@ namespace plume {
+-        // Pipeline and buffer resources
+@@ -64,2 +57,0 @@ namespace plume {
+-    // MARK: - Helpers
+-
+@@ -67 +59 @@ namespace plume {
+-        // Create framebuffers for each swap chain image
++
+@@ -84 +76 @@ namespace plume {
+-        // Create a pipeline layout (without any descriptor sets or push constants)
++
+@@ -90 +81,0 @@ namespace plume {
+-        // Get the shader format from the render interface
+@@ -93 +83,0 @@ namespace plume {
+-        // Create shader objects
+@@ -97 +86,0 @@ namespace plume {
+-        // Different entry point names depending on shader format
+@@ -119,3 +108 @@ namespace plume {
+-        // Define vertex input layout
+-        // The vertex format has position (vec3) and color (vec4)
+-        ctx.m_inputSlot = RenderInputSlot(0, sizeof(float) * 7); // 3 floats for position + 4 floats for color
++        ctx.m_inputSlot = RenderInputSlot(0, sizeof(float) * 7);
+@@ -128 +114,0 @@ namespace plume {
+-        // Create graphics pipeline
+@@ -146 +132 @@ namespace plume {
+-        // Define triangle vertices: position (x, y, z) and color (r, g, b, a)
++
+@@ -148,3 +134,3 @@ namespace plume {
+-            0.0f,  0.5f, 0.0f,    1.0f, 0.0f, 0.0f, 1.0f, // Top vertex (red)
+-            -0.5f, -0.5f, 0.0f,    0.0f, 1.0f, 0.0f, 1.0f, // Bottom left vertex (green)
+-            0.5f, -0.5f, 0.0f,    0.0f, 0.0f, 1.0f, 1.0f  // Bottom right vertex (blue)
++            0.0f,  0.5f, 0.0f,    1.0f, 0.0f, 0.0f, 1.0f,
++            -0.5f, -0.5f, 0.0f,    0.0f, 1.0f, 0.0f, 1.0f,
++            0.5f, -0.5f, 0.0f,    0.0f, 0.0f, 1.0f, 1.0f
+@@ -153 +138,0 @@ namespace plume {
+-        // Create vertex buffer
+@@ -156 +140,0 @@ namespace plume {
+-        // Map buffer and copy vertex data
+@@ -161 +144,0 @@ namespace plume {
+-        // Create vertex buffer view
+@@ -166 +149 @@ namespace plume {
+-        // Create device
++
+@@ -169 +151,0 @@ namespace plume {
+-        // Create command queue for graphics
+@@ -172 +153,0 @@ namespace plume {
+-        // Create a command fence
+@@ -175 +155,0 @@ namespace plume {
+-        // Create a swap chain for the window using the render window from init
+@@ -178 +157,0 @@ namespace plume {
+-        // Explicitly resize the swapchain to create the textures
+@@ -181 +159,0 @@ namespace plume {
+-        // Create command list
+@@ -184 +161,0 @@ namespace plume {
+-        // Create acquire semaphore for swap chain synchronization
+@@ -187 +163,0 @@ namespace plume {
+-        // Create command fence for synchronization
+@@ -190 +165,0 @@ namespace plume {
+-        // Create framebuffers for each swap chain image
+@@ -193 +167,0 @@ namespace plume {
+-        // Create the graphics pipeline
+@@ -196 +169,0 @@ namespace plume {
+-        // Create the vertex buffer with triangle data
+@@ -200,3 +172,0 @@ namespace plume {
+-
+-    // MARK: - Lifecycle Methods
+-
+@@ -214 +183,0 @@ namespace plume {
+-        // Simply resize the swapchain
+@@ -216 +185 @@ namespace plume {
+-            // Clear old framebuffers
++
+@@ -219 +187,0 @@ namespace plume {
+-            // Resize the swap chain
+@@ -226 +193,0 @@ namespace plume {
+-            // Recreate framebuffers for the resized swap chain
+@@ -237 +203,0 @@ namespace plume {
+-        // Acquire the next swapchain image
+@@ -241 +206,0 @@ namespace plume {
+-        // Begin command recording
+@@ -244 +208,0 @@ namespace plume {
+-        // Get the current swap chain texture and transition to render target
+@@ -248 +211,0 @@ namespace plume {
+-        // Get the current swapchain framebuffer
+@@ -252 +214,0 @@ namespace plume {
+-        // Set up viewport and scissor
+@@ -261 +222,0 @@ namespace plume {
+-        // Clear with a dark blue color
+@@ -265 +225,0 @@ namespace plume {
+-        // Bind the pipeline and vertex buffer
+@@ -270 +229,0 @@ namespace plume {
+-        // Draw the triangle
+@@ -273 +231,0 @@ namespace plume {
+-        // Transition to present layout
+@@ -276 +233,0 @@ namespace plume {
+-        // End command recording
+@@ -279 +235,0 @@ namespace plume {
+-        // Create semaphores if needed
+@@ -284 +239,0 @@ namespace plume {
+-        // Submit and present
+@@ -287,0 +243,2 @@ namespace plume {
++        const RenderBarrierStages waitSemaphoreStages =
++            RenderBarrierStage::GRAPHICS;
+@@ -289 +246,2 @@ namespace plume {
+-        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore, 1, &signalSemaphore, 1, ctx.m_fence.get());
++        ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore,
++            &waitSemaphoreStages, 1, &signalSemaphore, 1, ctx.m_fence.get());
+@@ -291 +248,0 @@ namespace plume {
+-        // Present the frame
+@@ -343 +299,0 @@ namespace plume {
+-        // Transition the active swap chain render target out of the present state to avoid live references to the resource
+@@ -353 +309,5 @@ namespace plume {
+-            ctx.m_commandQueue->executeCommandLists(&cmdList, 1, &waitSemaphore, 1, nullptr, 0, ctx.m_fence.get());
++            const RenderBarrierStages waitSemaphoreStages =
++                RenderBarrierStage::GRAPHICS;
++            ctx.m_commandQueue->executeCommandLists(&cmdList, 1,
++                &waitSemaphore, &waitSemaphoreStages, 1, nullptr, 0,
++                ctx.m_fence.get());
+diff --git a/plume_clock_calibration.h b/plume_clock_calibration.h
+new file mode 100644
+index 0000000..614ab1b
+--- /dev/null
++++ b/plume_clock_calibration.h
+@@ -0,0 +1,38 @@
++#pragma once
++#include <cstdint>
++#include <cmath>
++
++namespace plume {
++    enum class ProfileHostClock : uint32_t { Unknown, QueryPerformanceCounter, Monotonic };
++
++    struct ProfileClockCalibration {
++        uint64_t gpuNanoseconds = 0;
++        uint64_t hostTicks = 0;
++        uint64_t hostFrequency = 0;
++        uint64_t maximumDeviationNanoseconds = 0;
++        bool maximumDeviationKnown = false;
++        uint32_t timestampValidBits = 0;
++        uint64_t gpuWrapNanoseconds = 0;
++        ProfileHostClock hostClock = ProfileHostClock::Unknown;
++
++        double queryScaleErrorPartsPerBillion = 0;
++    };
++
++    inline bool profileVulkanNanoseconds(uint64_t ticks, double period, uint64_t &nanoseconds) {
++        if (!(period >= 1.0 / 65536.0 && period < 281474976710656.0)) return false;
++        const uint64_t factor = uint64_t(period * 65536.0);
++        const uint64_t u1 = ticks & 0xffffffff, v1 = factor & 0xffffffff;
++        uint64_t t = u1 * v1;
++        const uint64_t w3 = t & 0xffffffff;
++        uint64_t k = t >> 32;
++        t = (ticks >> 32) * v1 + k;
++        k = t & 0xffffffff;
++        const uint64_t w1 = t >> 32;
++        t = u1 * (factor >> 32) + k;
++        const uint64_t high = (ticks >> 32) * (factor >> 32) + w1 + (t >> 32);
++        const uint64_t low = (t << 32) + w3;
++        if ((high >> 16) != 0) return false;
++        nanoseconds = (low >> 16) | (high << 48);
++        return true;
++    }
++}
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 2cdcf18..1bff375 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -8,0 +5 @@
++#include "common/rt64_performance_profiler.h"
+@@ -10,0 +8,2 @@
++#include <stdexcept>
++#include <sstream>
+@@ -28,3 +27 @@
+-#   define D3D12_DEBUG_LAYER_SUPRESS_SAMPLE_POSITIONS_ERROR // Supress error message that's been fixed in newer Agility SDK versions.
+-//#   define D3D12_DEBUG_LAYER_GPU_BASED_VALIDATION_ENABLED
+-#endif
++#   define D3D12_DEBUG_LAYER_SUPRESS_SAMPLE_POSITIONS_ERROR
+@@ -32 +29 @@
+-//#define D3D12_DEBUG_SET_STABLE_POWER_STATE
++#endif
+@@ -34 +30,0 @@
+-// Old Windows SDK versions don't provide this macro, so we workaround it by making sure it is defined.
+@@ -51 +47,9 @@ namespace plume {
+-    // Common functions.
++    static void checkPipelineResult(HRESULT result, const char *operation, const std::string &context = {}) {
++        if (FAILED(result)) {
++            std::ostringstream message;
++            message << operation << " failed (HRESULT 0x" << std::hex << uint32_t(result) << ") " << context;
++            std::fprintf(stderr, "%s\n", message.str().c_str());
++            std::fflush(stderr);
++            throw std::runtime_error(message.str());
++        }
++    }
+@@ -144,2 +148 @@ namespace plume {
+-            // In order to be able to create both depth-stencil and shader resource views,
+-            // we must use R32G8X24_TYPELESS as the base type and specialize later.
++
+@@ -238,2 +241 @@ namespace plume {
+-            // D3D12 and Vulkan disagree on whether D32 is usable as a texture view format.
+-            // We just make D3D12 use R32 instead.
++
+@@ -243 +245 @@ namespace plume {
+-            // Specialize into depth view of depth-stencil texture.
++
+@@ -252 +254 @@ namespace plume {
+-            // Specialize into full depth-stencil view.
++
+@@ -317 +319 @@ namespace plume {
+-    
++
+@@ -366 +368 @@ namespace plume {
+-    
++
+@@ -537 +539 @@ namespace plume {
+-            return D3D_PRIMITIVE_TOPOLOGY_LINELIST;   
++            return D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+@@ -541 +543 @@ namespace plume {
+-            return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;     
++            return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+@@ -600 +602 @@ namespace plume {
+-        // The only allowed state for acceleration structures.
++
+@@ -605 +606,0 @@ namespace plume {
+-        // Use copy-optimized states.
+@@ -615 +615,0 @@ namespace plume {
+-        // Use unordered access state if the buffer supports it and writing is enabled.
+@@ -620 +619,0 @@ namespace plume {
+-        // If both stages are required and the buffer is read-only, use the all shader resource state.
+@@ -627 +625,0 @@ namespace plume {
+-        // Use graphics pipeline states.
+@@ -642 +639,0 @@ namespace plume {
+-        // Fall back to common state.
+@@ -645 +642 @@ namespace plume {
+-    
++
+@@ -705 +701,0 @@ namespace plume {
+-            // Test for conditions that might not be reported if the hardware doesn't complain about them.
+@@ -731 +727 @@ namespace plume {
+-            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0;  
++            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0;
+@@ -733 +729 @@ namespace plume {
+-            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_1;    
++            return D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_1;
+@@ -735 +731 @@ namespace plume {
+-            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0;   
++            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0;
+@@ -737 +733 @@ namespace plume {
+-            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1;     
++            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1;
+@@ -739 +735 @@ namespace plume {
+-            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2;    
++            return D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2;
+@@ -776,2 +771,0 @@ namespace plume {
+-    // D3D12DescriptorHeapAllocator
+-
+@@ -801 +795 @@ namespace plume {
+-        
++
+@@ -861 +854,0 @@ namespace plume {
+-        // The previous free block is contiguous.
+@@ -869 +861,0 @@ namespace plume {
+-        // The next free block is contiguous.
+@@ -891,2 +882,0 @@ namespace plume {
+-    // D3D12DescriptorSet
+-
+@@ -898 +887,0 @@ namespace plume {
+-        // Figure out the total amount of entries that will be required.
+@@ -994 +982,0 @@ namespace plume {
+-                // Figure out the number of elements from the format.
+@@ -1045 +1032,0 @@ namespace plume {
+-                // Figure out the number of elements from the format.
+@@ -1098 +1084,0 @@ namespace plume {
+-        // Texture state is ignored by D3D12 because image layout information is not required.
+@@ -1281 +1267 @@ namespace plume {
+-    
++
+@@ -1316,2 +1301,0 @@ namespace plume {
+-    // D3D12SwapChain
+-
+@@ -1324,2 +1308 @@ namespace plume {
+-        
+-        // Store the native format representation.
++
+@@ -1334 +1317 @@ namespace plume {
+-        
++
+@@ -1392 +1375 @@ namespace plume {
+-        // If using present wait, we prefer using a SyncInterval of 0 even when Vsync is enabled. Tearing won't happen if DXGI_PRESENT_ALLOW_TEARING is not specified.
++
+@@ -1411 +1393,0 @@ namespace plume {
+-        // Don't resize the swap chain at all if the window doesn't have a valid size.
+@@ -1452,0 +1435,4 @@ namespace plume {
++    bool D3D12SwapChain::supportsTextureCopySource() const {
++        return true;
++    }
++
+@@ -1499,2 +1484,0 @@ namespace plume {
+-    // D3D12Framebuffer
+-    
+@@ -1505 +1489 @@ namespace plume {
+-        
++
+@@ -1776,2 +1759,0 @@ namespace plume {
+-    // D3D12QueryPool
+-
+@@ -1804 +1786,11 @@ namespace plume {
+-    void D3D12QueryPool::queryResults() {
++    void D3D12QueryPool::queryResults(
++        uint32_t firstQuery, uint32_t queryCount) {
++        queryReadState.invalidate();
++        if (firstQuery > results.size() || queryCount > results.size() - firstQuery) return;
++
++        assert(firstQuery <= results.size());
++        assert(queryCount <= results.size() - firstQuery);
++        if (queryCount == 0) {
++            return;
++        }
++        if (device->timestampFrequency == 0) return;
+@@ -1806 +1798,4 @@ namespace plume {
+-        memcpy(results.data(), readbackData, sizeof(uint64_t) * results.size());
++        if (readbackData == nullptr) return;
++        memcpy(results.data() + firstQuery,
++            static_cast<const uint64_t *>(readbackData) + firstQuery,
++            sizeof(uint64_t) * queryCount);
+@@ -1809,2 +1804,7 @@ namespace plume {
+-        for (uint64_t &result : results) {
+-            result = uint64_t(double(result) / double(device->timestampFrequency) * 1000000000.0);
++        for (uint32_t queryIndex = firstQuery;
++             queryIndex < firstQuery + queryCount; ++queryIndex) {
++            uint64_t &result = results[queryIndex];
++            const double nanoseconds = double(result) / double(device->timestampFrequency) * 1000000000.0;
++
++            if (!(nanoseconds >= 0.0 && nanoseconds < 18446744073709551616.0)) return;
++            result = uint64_t(nanoseconds);
+@@ -1811,0 +1812 @@ namespace plume {
++        queryReadState.completed(firstQuery, queryCount);
+@@ -1822,2 +1822,0 @@ namespace plume {
+-    // D3D12CommandList
+-
+@@ -1857 +1855,0 @@ namespace plume {
+-        // Attempt to query the interfaces available for this command list.
+@@ -1889 +1886,0 @@ namespace plume {
+-        // It's required to reset the sample positions before the command list ends.
+@@ -1903 +1900 @@ namespace plume {
+-    
++
+@@ -1907 +1904 @@ namespace plume {
+-        
++
+@@ -1946 +1943 @@ namespace plume {
+-        
++
+@@ -1959,2 +1956 @@ namespace plume {
+-            
+-            // MSAA Depth targets with multisampling require separate barriers.
++
+@@ -1975 +1971 @@ namespace plume {
+-        
++
+@@ -1989 +1985 @@ namespace plume {
+-        assert(activeComputePipelineLayout != nullptr); // Ray tracing uses compute layout
++        assert(activeComputePipelineLayout != nullptr);
+@@ -2017 +2013 @@ namespace plume {
+-    
++
+@@ -2145 +2141 @@ namespace plume {
+-    
++
+@@ -2190 +2186 @@ namespace plume {
+-            // Single element fast path.
++
+@@ -2209 +2205 @@ namespace plume {
+-            // Single element fast path.
++
+@@ -2214 +2210 @@ namespace plume {
+-    
++
+@@ -2221 +2217 @@ namespace plume {
+-            
++
+@@ -2378 +2374 @@ namespace plume {
+-        
++
+@@ -2427 +2423 @@ namespace plume {
+-        // Do nothing.
++
+@@ -2472 +2468 @@ namespace plume {
+-    
++
+@@ -2482 +2478 @@ namespace plume {
+-    
++
+@@ -2514 +2509,0 @@ namespace plume {
+-
+@@ -2581,2 +2575,0 @@ namespace plume {
+-    // D3D12CommandFence
+-
+@@ -2608,2 +2600,0 @@ namespace plume {
+-    // D3D12CommandSemaphore
+-
+@@ -2630,2 +2620,0 @@ namespace plume {
+-    // D3D12CommandQueue
+-
+@@ -2670,0 +2660,21 @@ namespace plume {
++    bool D3D12CommandQueue::getProfileClockCalibration(ProfileClockCalibration &sample) {
++        sample = {};
++        UINT64 gpuTicks = 0, hostTicks = 0, frequency = 0;
++        LARGE_INTEGER hostFrequency;
++        if (FAILED(d3d->GetTimestampFrequency(&frequency)) || !frequency ||
++                frequency != device->timestampFrequency ||
++                FAILED(d3d->GetClockCalibration(&gpuTicks, &hostTicks)) ||
++                !QueryPerformanceFrequency(&hostFrequency) || hostFrequency.QuadPart <= 0) return false;
++
++        const double nanoseconds = double(gpuTicks) / double(frequency) * 1000000000.0;
++        if (!(nanoseconds >= 0.0 && nanoseconds < 18446744073709551616.0)) return false;
++        sample.gpuNanoseconds = uint64_t(nanoseconds);
++        sample.hostTicks = hostTicks;
++        sample.hostFrequency = uint64_t(hostFrequency.QuadPart);
++        sample.hostClock = ProfileHostClock::QueryPerformanceCounter;
++        sample.timestampValidBits = 64;
++
++        sample.maximumDeviationKnown = false;
++        return true;
++    }
++
+@@ -2679 +2689 @@ namespace plume {
+-    void D3D12CommandQueue::executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
++    uint64_t D3D12CommandQueue::executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
+@@ -2681,0 +2692,3 @@ namespace plume {
++        assert((waitSemaphoreCount == 0) ||
++            ((waitSemaphores != nullptr) &&
++             (waitSemaphoreStages != nullptr)));
+@@ -2695,0 +2709,2 @@ namespace plume {
++            RT64::PerformanceScope driverSubmit(RT64::PerformanceCategory::CPU,
++                "Backend.D3D12.DriverSubmit", reinterpret_cast<uintptr_t>(d3d), commandListCount);
+@@ -2704 +2719 @@ namespace plume {
+-        
++
+@@ -2710,0 +2726,14 @@ namespace plume {
++        return ++submissionSequence;
++    }
++
++    RenderCommandFenceStatus D3D12CommandQueue::queryCommandFenceStatus(
++        RenderCommandFence *fence) {
++        assert(fence != nullptr);
++
++        D3D12CommandFence *interfaceFence =
++            static_cast<D3D12CommandFence *>(fence);
++        assert(interfaceFence->fenceValue > 0);
++        return (interfaceFence->d3d->GetCompletedValue() >=
++                interfaceFence->fenceValue - 1)
++            ? RenderCommandFenceStatus::Ready
++            : RenderCommandFenceStatus::Pending;
+@@ -2720,2 +2748,0 @@ namespace plume {
+-    // D3D12Buffer
+-
+@@ -2729 +2755,0 @@ namespace plume {
+-        // Constant buffers must be aligned to D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT (256 bytes).
+@@ -2744 +2769,0 @@ namespace plume {
+-        // Default to acceleration structure state if allowed.
+@@ -2748,2 +2773 @@ namespace plume {
+-        
+-        // Resources on upload heap require generic read during creation.
++
+@@ -2753 +2777 @@ namespace plume {
+-        // Resources on readback heap require copy dest during creation.
++
+@@ -2812,2 +2835,0 @@ namespace plume {
+-    // D3D12BufferFormattedView
+-
+@@ -2824,2 +2845,0 @@ namespace plume {
+-    // D3D12TextureView
+-
+@@ -2844,2 +2863,0 @@ namespace plume {
+-    // D3D12Texture
+-
+@@ -2901,2 +2918,0 @@ namespace plume {
+-    // D3D12AccelerationStructure
+-
+@@ -2918,2 +2933,0 @@ namespace plume {
+-    // D3D12Pool
+-
+@@ -2928,2 +2941,0 @@ namespace plume {
+-        // When using an UMA architecture without explicit support for GPU Upload heaps,
+-        // we instead just make a custom heap with the same properties as Upload heaps.
+@@ -2963,2 +2974,0 @@ namespace plume {
+-    // D3D12Shader
+-
+@@ -2983,2 +2992,0 @@ namespace plume {
+-        // Nothing to set a name on.
+-    }
+@@ -2986 +2994 @@ namespace plume {
+-    // D3D12Sampler
++    }
+@@ -3033,2 +3040,0 @@ namespace plume {
+-    // D3D12Pipeline
+-
+@@ -3044,2 +3049,0 @@ namespace plume {
+-    // D3D12ComputePipeline
+-
+@@ -3057 +3061,2 @@ namespace plume {
+-        device->d3d->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++        checkPipelineResult(device->d3d->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&d3d)),
++            "D3D12 CreateComputePipelineState", "shader bytes=" + std::to_string(psoDesc.CS.BytecodeLength));
+@@ -3075,2 +3079,0 @@ namespace plume {
+-    // D3D12GraphicsPipeline
+-
+@@ -3150 +3153 @@ namespace plume {
+-            
++
+@@ -3177 +3179,0 @@ namespace plume {
+-            // Read the corresponding input slot to find the input classification and instance data step rate.
+@@ -3202 +3204,8 @@ namespace plume {
+-        device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++        const HRESULT result = device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++        if (FAILED(result)) {
++            std::ostringstream context;
++            context << "VS bytes=" << psoDesc.VS.BytecodeLength << ", PS bytes=" << psoDesc.PS.BytecodeLength
++                << ", samples=" << psoDesc.SampleDesc.Count << ", targets=" << psoDesc.NumRenderTargets
++                << ", color format=" << psoDesc.RTVFormats[0] << ", depth format=" << psoDesc.DSVFormat;
++            checkPipelineResult(result, "D3D12 CreateGraphicsPipelineState", context.str());
++        }
+@@ -3220,2 +3228,0 @@ namespace plume {
+-    // D3D12RaytracingPipeline
+-
+@@ -3414 +3420,0 @@ namespace plume {
+-        // Cache all the programs compiled into the PSO into a name map.
+@@ -3445,2 +3450,0 @@ namespace plume {
+-    // D3D12PipelineLayout
+-
+@@ -3458 +3461,0 @@ namespace plume {
+-        // Push constants will be the first root parameters of the signature.
+@@ -3471 +3473,0 @@ namespace plume {
+-        // Figure out the total size of ranges that will be needed first.
+@@ -3497 +3498,0 @@ namespace plume {
+-        // Descriptor sets will be created as descriptor table parameters.
+@@ -3505 +3506 @@ namespace plume {
+-                // D3D12 requires specifying boundless arrays by setting the descriptor count to UINT_MAX.
++
+@@ -3509 +3509,0 @@ namespace plume {
+-                // Immutable samplers are converted to static samplers and filtered out of the table entirely.
+@@ -3531 +3531 @@ namespace plume {
+-                // Dynamic samplers must use a different type of heap.
++
+@@ -3579 +3578,0 @@ namespace plume {
+-        // Add root descriptors last.
+@@ -3583 +3582 @@ namespace plume {
+-            D3D12_ROOT_PARAMETER rootParameter = {};            
++            D3D12_ROOT_PARAMETER rootParameter = {};
+@@ -3607 +3605,0 @@ namespace plume {
+-        // Store the total amount of root parameters.
+@@ -3610 +3607,0 @@ namespace plume {
+-        // Fill root signature desc.
+@@ -3619,3 +3616,2 @@ namespace plume {
+-        // Serialize the root signature.
+-        ID3DBlob *signatureBlob;
+-        ID3DBlob *errorBlob;
++        ID3DBlob *signatureBlob = nullptr;
++        ID3DBlob *errorBlob = nullptr;
+@@ -3622,0 +3619,2 @@ namespace plume {
++        const std::string detail = errorBlob ? std::string(static_cast<const char *>(errorBlob->GetBufferPointer()), errorBlob->GetBufferSize()) : "";
++        if (errorBlob) errorBlob->Release();
+@@ -3624,2 +3622,2 @@ namespace plume {
+-            fprintf(stderr, "%s\n", (char *)(errorBlob->GetBufferPointer()));
+-            return;
++            if (signatureBlob) signatureBlob->Release();
++            checkPipelineResult(res, "D3D12SerializeRootSignature", detail);
+@@ -3629,4 +3627,2 @@ namespace plume {
+-        if (FAILED(res)) {
+-            fprintf(stderr, "CreateRootSignature failed with error code 0x%lX.\n", res);
+-            return;
+-        }
++        signatureBlob->Release();
++        checkPipelineResult(res, "D3D12 CreateRootSignature");
+@@ -3641,2 +3636,0 @@ namespace plume {
+-    // D3D12Device
+-
+@@ -3647,2 +3641 @@ namespace plume {
+-        
+-        // Detect adapter to use that will offer the best performance and features.
++
+@@ -3656 +3648,0 @@ namespace plume {
+-            // Ignore remote or software adapters.
+@@ -3669 +3660,0 @@ namespace plume {
+-            // Determine the shader model supported by the device.
+@@ -3690 +3680,0 @@ namespace plume {
+-            // Determine if the device supports sample locations.
+@@ -3700 +3689,0 @@ namespace plume {
+-            // Determine if the device supports raytracing.
+@@ -3715 +3704 @@ namespace plume {
+-            // Check if triangle fan is supported.
++
+@@ -3722 +3710,0 @@ namespace plume {
+-            // Check if dynamic depth bias and GPU upload heap are supported.
+@@ -3731 +3718,0 @@ namespace plume {
+-            // Check if the architecture has UMA.
+@@ -3739 +3725,0 @@ namespace plume {
+-            // Pick this adapter and device if it has better feature support than the current one.
+@@ -3762 +3748 @@ namespace plume {
+-                capabilities.resolveModes = samplePositionsOption; // Resolve modes require sample positions support.
++                capabilities.resolveModes = samplePositionsOption;
+@@ -3767,2 +3752,0 @@ namespace plume {
+-                // Pretend GPU Upload heaps are supported if UMA is supported, as
+-                // the backend has a workaround using a custom pool for it.
+@@ -3804 +3788 @@ namespace plume {
+-        allocatorDesc.Flags = D3D12MA::ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED | 
++        allocatorDesc.Flags = D3D12MA::ALLOCATOR_FLAG_DEFAULT_POOLS_NOT_ZEROED |
+@@ -3823 +3807 @@ namespace plume {
+-        // Add it to the debug layer info queue if available.
++
+@@ -3843 +3827 @@ namespace plume {
+-            
++
+@@ -3856,2 +3840 @@ namespace plume {
+-        
+-        // Fill capabilities.
++
+@@ -3867 +3849,0 @@ namespace plume {
+-        // Create descriptor heaps allocator.
+@@ -3873 +3854,0 @@ namespace plume {
+-        // Create the custom upload pool that will be used as the fallback when using an UMA architecture without explicit support for GPU Upload heaps.
+@@ -3880 +3860,0 @@ namespace plume {
+-        // Create a command queue only for retrieving the timestamp frequency. Delete it immediately afterwards.
+@@ -3923 +3903 @@ namespace plume {
+-    
++
+@@ -4082 +4062 @@ namespace plume {
+-        
++
+@@ -4177,2 +4156,0 @@ namespace plume {
+-    // D3D12Interface
+-
+@@ -4180 +4158 @@ namespace plume {
+-        // Create DXGI Factory.
++
+@@ -4191 +4168,0 @@ namespace plume {
+-            // Enable additional debug layers.
+@@ -4202 +4178,0 @@ namespace plume {
+-        // Check for support for allowing tearing on the swap chain.
+@@ -4210 +4185,0 @@ namespace plume {
+-        // Fill capabilities.
+@@ -4213 +4187,0 @@ namespace plume {
+-        // Fill device names.
+@@ -4220 +4193,0 @@ namespace plume {
+-            // Ignore remote or software adapters.
+@@ -4252,2 +4224,0 @@ namespace plume {
+-    // Global creation function.
+-    
+diff --git a/plume_d3d12.h b/plume_d3d12.h
+index 4827452..a67224b 100644
+--- a/plume_d3d12.h
++++ b/plume_d3d12.h
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -43 +38,0 @@ namespace plume {
+-        // Reference implementation http://diligentgraphics.com/diligent-engine/architecture/d3d12/variable-size-memory-allocations-manager/
+@@ -124,0 +120 @@ namespace plume {
++        bool supportsTextureCopySource() const override;
+@@ -163 +159,2 @@ namespace plume {
+-        virtual void queryResults() override;
++        virtual void queryResults(
++            uint32_t firstQuery, uint32_t queryCount) override;
+@@ -261,0 +259 @@ namespace plume {
++        uint64_t submissionSequence = 0;
+@@ -264,0 +263 @@ namespace plume {
++        bool getProfileClockCalibration(ProfileClockCalibration &sample) override;
+@@ -267 +266,3 @@ namespace plume {
+-        void executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        uint64_t executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        RenderCommandFenceStatus queryCommandFenceStatus(
++            RenderCommandFence *fence) override;
+diff --git a/plume_metal.cpp b/plume_metal.cpp
+index 373c87e..ea133ab 100644
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -28 +23,0 @@ namespace plume {
+-    // MARK: - Constants
+@@ -35,2 +29,0 @@ namespace plume {
+-    // MARK: - Prototypes
+-
+@@ -40,2 +32,0 @@ namespace plume {
+-    // MARK: - Helpers
+-
+@@ -93,2 +84 @@ namespace plume {
+-        // Always clamp the scissor rect to the render target dimensions.
+-        // RenderRect is signed, but Metal's rect is not. Use a signed max function, then cast to unsigned.
++
+@@ -112 +102 @@ namespace plume {
+-            // No need to clamp
++
+@@ -116 +105,0 @@ namespace plume {
+-        // Always clamp to the attachment dimensions, to avoid Metal API error
+@@ -129 +117,0 @@ namespace plume {
+-        // If no valid attachments found, return original rect
+@@ -134 +121,0 @@ namespace plume {
+-        // Clamp width and height to fit within the render target
+@@ -146,2 +132,0 @@ namespace plume {
+-    // MARK: - Mapping RHI <> Metal
+-
+@@ -259 +244 @@ namespace plume {
+-                // Block compressed formats
++
+@@ -404 +389 @@ namespace plume {
+-            // Block compressed formats
++
+@@ -732,2 +716,0 @@ namespace plume {
+-    // Metal does not support Logic Operations in the public API.
+-
+@@ -970,6 +952,0 @@ namespace plume {
+-    // This structure should be used to wrap any public APIs, constructors or
+-    // destructors in an autorelease pool. Autorelease pools should never be
+-    // initialized or released without using this structure. The structure
+-    // should be declared as early as possible into the function. The structure
+-    // can be omitted if the function makes no use of any Metal functions.
+-
+@@ -988,2 +964,0 @@ namespace plume {
+-    // MARK: - Helper Structures
+-
+@@ -996 +970,0 @@ namespace plume {
+-        // Initialize binding vector with -1 (invalid index)
+@@ -999 +972,0 @@ namespace plume {
+-        // Pre-allocate vectors with known size
+@@ -1006 +978,0 @@ namespace plume {
+-        // First pass: Calculate descriptor bases and bindings
+@@ -1015 +986,0 @@ namespace plume {
+-        // Sort ranges by binding due to how spirv-cross orders them
+@@ -1021 +991,0 @@ namespace plume {
+-        // Second pass: Create argument descriptors and set bindings
+@@ -1025 +995 @@ namespace plume {
+-            // The binding exceeds our fixed binding vec limit, increase MAX_BINDING_NUMBER if necessary
++
+@@ -1056 +1026 @@ namespace plume {
+-                // exhaust curBinding with padding till we reach the actual current binding
++
+@@ -1066 +1035,0 @@ namespace plume {
+-            // Include the current binding
+@@ -1069 +1037,0 @@ namespace plume {
+-            // Create argument descriptor
+@@ -1084 +1051,0 @@ namespace plume {
+-        // Handle boundless range if present
+@@ -1109 +1075,0 @@ namespace plume {
+-        // Create and initialize argument encoder
+@@ -1113 +1078,0 @@ namespace plume {
+-        // Release resources
+@@ -1133,2 +1097,0 @@ namespace plume {
+-    // MetalBuffer
+-
+@@ -1187,2 +1149,0 @@ namespace plume {
+-    // MetalBufferFormattedView
+-
+@@ -1196 +1156,0 @@ namespace plume {
+-        // Calculate texture properties
+@@ -1201 +1160,0 @@ namespace plume {
+-        // Configure texture properties
+@@ -1206 +1164,0 @@ namespace plume {
+-        // Create texture with configured descriptor and alignment
+@@ -1216,2 +1173,0 @@ namespace plume {
+-    // MetalTexture
+-
+@@ -1240 +1196 @@ namespace plume {
+-        // Add shader write usage if this texture might be used as a resolve target
++
+@@ -1249 +1204,0 @@ namespace plume {
+-        // Release resources
+@@ -1268,2 +1222,0 @@ namespace plume {
+-    // MetalTextureView
+-
+@@ -1298,2 +1250,0 @@ namespace plume {
+-    // MetalAccelerationStructure
+-
+@@ -1310,2 +1260,0 @@ namespace plume {
+-    // MetalPool
+-
+@@ -1316 +1264,0 @@ namespace plume {
+-        // TODO: Implement MetalPool
+@@ -1330,2 +1277,0 @@ namespace plume {
+-    // MetalShader
+-
+@@ -1400,2 +1345,0 @@ namespace plume {
+-    // MetalSampler
+-
+@@ -1422 +1365,0 @@ namespace plume {
+-        // Release resources
+@@ -1431,2 +1373,0 @@ namespace plume {
+-    // MetalPipeline
+-
+@@ -1442,2 +1382,0 @@ namespace plume {
+-    // MetalComputePipeline
+-
+@@ -1457 +1395,0 @@ namespace plume {
+-        // State variables, initialized here to be reused in encoder re-binding
+@@ -1469 +1406,0 @@ namespace plume {
+-        // Release resources
+@@ -1482 +1419 @@ namespace plume {
+-        // TODO: New - setting name happens at descriptor level - this would have to be reworked
++
+@@ -1490,2 +1426,0 @@ namespace plume {
+-    // MetalGraphicsPipeline
+-
+@@ -1521,2 +1456 @@ namespace plume {
+-                // Metal does not support stride 0, we must provide a
+-                // substitute "null" buffer to match behaviour of other robust APIs.
++
+@@ -1571 +1504,0 @@ namespace plume {
+-        // State variables, initialized here to be reused in encoder re-binding
+@@ -1625 +1557,0 @@ namespace plume {
+-        // Release resources
+@@ -1652 +1584 @@ namespace plume {
+-        // TODO: New - setting name happens at descriptor level - this would have to be reworked
++
+@@ -1660,2 +1591,0 @@ namespace plume {
+-    // MetalDescriptorSet
+-
+@@ -1671 +1600,0 @@ namespace plume {
+-        // Figure out the total amount of entries that will be required.
+@@ -1676 +1604,0 @@ namespace plume {
+-            // Ensure at least one entry is created for boundless ranges.
+@@ -1722 +1650 @@ namespace plume {
+-        // For Tier 2, get pointer to argument buffer for direct writes
++
+@@ -1805 +1733 @@ namespace plume {
+-        // TODO: Unimplemented.
++
+@@ -1822 +1749,0 @@ namespace plume {
+-            // For Tier 2, get pointer to argument buffer for direct writes
+@@ -1886,2 +1812,0 @@ namespace plume {
+-    // MetalDrawable
+-
+@@ -1905,2 +1829,0 @@ namespace plume {
+-    // MetalSwapChain
+-
+@@ -1916 +1838,0 @@ namespace plume {
+-        // Metal supports a maximum of 3 drawables.
+@@ -1922 +1843,0 @@ namespace plume {
+-        // Set the layer's drawable size to match the window size
+@@ -1927 +1847,0 @@ namespace plume {
+-        // set each of the drawable to have desc.flags = RenderTextureFlag::RENDER_TARGET;
+@@ -1947 +1866,0 @@ namespace plume {
+-        // Create a new command buffer just for presenting
+@@ -1959,2 +1877,0 @@ namespace plume {
+-        // According to Apple, presenting via scheduled handler is more performant than using the presentDrawable method.
+-        // We grab the underlying drawable because we might've acquired a new one by now and the old one would have been released.
+@@ -2040,0 +1958,4 @@ namespace plume {
++    bool MetalSwapChain::supportsTextureCopySource() const {
++        return false;
++    }
++
+@@ -2051 +1971,0 @@ namespace plume {
+-        // Create a command buffer just to encode the signal
+@@ -2066 +1985,0 @@ namespace plume {
+-        // Set the texture index and drawable data
+@@ -2074 +1993 @@ namespace plume {
+-            // Release our reference before replacing.
++
+@@ -2109,2 +2027,0 @@ namespace plume {
+-    // MetalAttachment
+-
+@@ -2115,2 +2031,0 @@ namespace plume {
+-    // MetalFramebuffer
+-
+@@ -2172 +2087 @@ namespace plume {
+-                    // Normalize from [-8, 7] to [0,1) range
++
+@@ -2194,2 +2108,0 @@ namespace plume {
+-    // MetalQueryPool
+-
+@@ -2218 +2131,7 @@ namespace plume {
+-    void MetalQueryPool::queryResults() {
++    void MetalQueryPool::queryResults(
++        uint32_t firstQuery, uint32_t queryCount) {
++        assert(firstQuery <= results.size());
++        assert(queryCount <= results.size() - firstQuery);
++        if (queryCount == 0) {
++            return;
++        }
+@@ -2220,2 +2139,4 @@ namespace plume {
+-        const NS::Data* data = sampleBuffer->resolveCounterRange(NS::Range(0, results.size()));
+-        std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
++        const NS::Data* data = sampleBuffer->resolveCounterRange(
++            NS::Range(firstQuery, queryCount));
++        std::memcpy(results.data() + firstQuery, data->mutableBytes(),
++            queryCount * sizeof(uint64_t));
+@@ -2232,2 +2152,0 @@ namespace plume {
+-    // MetalCommandList
+-
+@@ -2268 +2186,0 @@ namespace plume {
+-        // Reset fence waits and updates for new command list.
+@@ -2421,2 +2339 @@ namespace plume {
+-            // Ignore layout transitions on Metal
+-            // interfaceTexture->layout = textureBarrier.layout;
++
+@@ -2425 +2341,0 @@ namespace plume {
+-        // End passes on all barriers to finish work and update the appropriate barrier fences.
+@@ -2462 +2378 @@ namespace plume {
+-        // TODO: Support Metal RT
++
+@@ -2469 +2384,0 @@ namespace plume {
+-        // Convert rect coordinates to normalized space (0 to 1)
+@@ -2475 +2389,0 @@ namespace plume {
+-        // Transform to clip space (-1 to 1)
+@@ -2478 +2392 @@ namespace plume {
+-        // Flip Y coordinates for Metal's coordinate system
++
+@@ -2482,7 +2396,6 @@ namespace plume {
+-        // Write vertices directly to the output array
+-        outVertices[0] = (simd::float2){ leftPos,  topPos };     // Top left
+-        outVertices[1] = (simd::float2){ leftPos,  bottomPos };  // Bottom left
+-        outVertices[2] = (simd::float2){ rightPos, bottomPos };  // Bottom right
+-        outVertices[3] = (simd::float2){ rightPos, bottomPos };  // Bottom right (repeated)
+-        outVertices[4] = (simd::float2){ rightPos, topPos };     // Top right
+-        outVertices[5] = (simd::float2){ leftPos,  topPos };     // Top left (repeated)
++        outVertices[0] = (simd::float2){ leftPos,  topPos };
++        outVertices[1] = (simd::float2){ leftPos,  bottomPos };
++        outVertices[2] = (simd::float2){ rightPos, bottomPos };
++        outVertices[3] = (simd::float2){ rightPos, bottomPos };
++        outVertices[4] = (simd::float2){ rightPos, topPos };
++        outVertices[5] = (simd::float2){ leftPos,  topPos };
+@@ -2529 +2442 @@ namespace plume {
+-                    // Mark all pipeline-related state as dirty since they come from the pipeline
++
+@@ -2550 +2463 @@ namespace plume {
+-            // Clear descriptor set bindings since they're no longer valid with the new layout
++
+@@ -2555 +2467,0 @@ namespace plume {
+-            // Clear push constants since they might have different layouts/ranges
+@@ -2559 +2470,0 @@ namespace plume {
+-            // Mark compute states as dirty that need to be rebound
+@@ -2604 +2515 @@ namespace plume {
+-            // Clear descriptor set bindings since they're no longer valid with the new layout
++
+@@ -2609 +2519,0 @@ namespace plume {
+-            // Clear push constants since they might have different layouts/ranges
+@@ -2613 +2522,0 @@ namespace plume {
+-            // Mark graphics states as dirty that need to be rebound
+@@ -2656 +2565 @@ namespace plume {
+-        // TODO: Metal RT
++
+@@ -2660 +2569 @@ namespace plume {
+-        // TODO: Metal RT
++
+@@ -2664 +2573 @@ namespace plume {
+-        // TODO: Metal RT
++
+@@ -2682 +2590,0 @@ namespace plume {
+-            // Check for changes in bindings
+@@ -2708 +2615,0 @@ namespace plume {
+-        // Since viewports are set at the encoder level, we mark it as dirty so it'll be updated on next active encoder check
+@@ -2721 +2627,0 @@ namespace plume {
+-        // Since scissors are set at the encoder level, we mark it as dirty so it'll be updated on next active encoder check
+@@ -2739 +2644,0 @@ namespace plume {
+-            // Initialize pending clears
+@@ -2744 +2648,0 @@ namespace plume {
+-            // Resize for color attachments (1 for depth, 1 for stencil)
+@@ -2782 +2685,0 @@ namespace plume {
+-        // For full framebuffer clears, use the more efficient load action clear
+@@ -2791 +2693,0 @@ namespace plume {
+-        // For partial clears, do our own quad-based clear
+@@ -2794 +2695,0 @@ namespace plume {
+-        // Store state cache
+@@ -2797 +2697,0 @@ namespace plume {
+-        // Process clears
+@@ -2809 +2708,0 @@ namespace plume {
+-        // Set pixel format for depth attachment if we have one, with write disabled
+@@ -2829 +2727,0 @@ namespace plume {
+-        // Generate vertices for each rect
+@@ -2831 +2729 @@ namespace plume {
+-        const size_t totalVertices = 6 * rectCount;  // 6 vertices per rect
++        const size_t totalVertices = 6 * rectCount;
+@@ -2837 +2735 @@ namespace plume {
+-            // Process each clear rect
++
+@@ -2842 +2740 @@ namespace plume {
+-            // Full screen clear
++
+@@ -2847 +2744,0 @@ namespace plume {
+-        // Set vertices
+@@ -2850 +2746,0 @@ namespace plume {
+-        // Use stack for clear colors too since we know the max size
+@@ -2861 +2756,0 @@ namespace plume {
+-        // Restore previous state if we had one
+@@ -2873 +2768 @@ namespace plume {
+-            // For full framebuffer clears, use the more efficient load action clear
++
+@@ -2891 +2785,0 @@ namespace plume {
+-            // For partial clears, do our own quad-based clear
+@@ -2894 +2787,0 @@ namespace plume {
+-            // Store state cache
+@@ -2897 +2789,0 @@ namespace plume {
+-            // Process clears
+@@ -2909 +2800,0 @@ namespace plume {
+-            // Set color attachment pixel formats with write disabled
+@@ -2929 +2819,0 @@ namespace plume {
+-            // Generate vertices for each rect
+@@ -2931 +2821 @@ namespace plume {
+-            const size_t totalVertices = 6 * rectCount;  // 6 vertices per rect
++            const size_t totalVertices = 6 * rectCount;
+@@ -2937 +2827 @@ namespace plume {
+-                // Process each clear rect
++
+@@ -2942 +2832 @@ namespace plume {
+-                // Full screen clear
++
+@@ -2947 +2836,0 @@ namespace plume {
+-            // Set vertices
+@@ -2960 +2848,0 @@ namespace plume {
+-            // Restore previous state if we had one
+@@ -2999 +2886,0 @@ namespace plume {
+-            // Calculate block size based on destination texture format
+@@ -3002 +2888,0 @@ namespace plume {
+-            // Use actual dimensions for the copy size
+@@ -3043,9 +2929,9 @@ namespace plume {
+-                srcTexture->mtl,                    // source texture
+-                srcLocation.subresource.arrayIndex, // source slice (baseArrayLayer)
+-                srcLocation.subresource.mipLevel,   // source mipmap level
+-                srcOrigin,                          // source origin
+-                size,                               // copy size
+-                dstTexture->mtl,                    // destination texture
+-                dstLocation.subresource.arrayIndex, // destination slice (baseArrayLayer)
+-                dstLocation.subresource.mipLevel,   // destination mipmap level
+-                dstOrigin                           // destination origin
++                srcTexture->mtl,
++                srcLocation.subresource.arrayIndex,
++                srcLocation.subresource.mipLevel,
++                srcOrigin,
++                size,
++                dstTexture->mtl,
++                dstLocation.subresource.arrayIndex,
++                dstLocation.subresource.mipLevel,
++                dstOrigin
+@@ -3096 +2981,0 @@ namespace plume {
+-        // For full texture resolves, use the more efficient render pass resolve
+@@ -3126 +3010,0 @@ namespace plume {
+-        // Check if we can use full texture resolve
+@@ -3146 +3029,0 @@ namespace plume {
+-        // Calculate source region
+@@ -3159 +3041,0 @@ namespace plume {
+-        // Setup resolve parameters
+@@ -3185 +3067 @@ namespace plume {
+-        // TODO: Unimplemented.
++
+@@ -3189 +3071 @@ namespace plume {
+-        // TODO: Unimplemented.
++
+@@ -3193 +3075 @@ namespace plume {
+-        // Not required in Metal.
++
+@@ -3198 +3080 @@ namespace plume {
+-        // No-op
++
+@@ -3213,2 +3095 @@ namespace plume {
+-            // If we are here because dispatch/draw sampling is not supported, end the
+-            // current encoder and ensure we have a blit encoder for sampling.
++
+@@ -3220,2 +3101 @@ namespace plume {
+-            // If the device does not support the required sampling point, but supports sampling at stage boundaries
+-            // (e.g. Apple GPUs), we need to use a dummy blit encoder configured to sample to the buffer.
++
+@@ -3234 +3113,0 @@ namespace plume {
+-            // Wait for query fence and perform dummy operation to record timestamp.
+@@ -3246 +3125 @@ namespace plume {
+-          // Early return for the most likely case.
++
+@@ -3252 +3131 @@ namespace plume {
+-          // Do nothing.
++
+@@ -3289 +3167,0 @@ namespace plume {
+-        // Pipeline state
+@@ -3298 +3175,0 @@ namespace plume {
+-        // Descriptor sets
+@@ -3305 +3181,0 @@ namespace plume {
+-        // Push constants
+@@ -3328 +3203,0 @@ namespace plume {
+-            // Clear state cache for compute
+@@ -3344 +3219 @@ namespace plume {
+-            // target frame buffer & sample positions affect the descriptor
++
+@@ -3385 +3259,0 @@ namespace plume {
+-            // Reset pending clears since we've now handled them
+@@ -3396 +3270 @@ namespace plume {
+-        // Pipeline state - only update if the actual pipeline object changed
++
+@@ -3405 +3278,0 @@ namespace plume {
+-        // Depth/stencil state
+@@ -3420 +3292,0 @@ namespace plume {
+-        // Rasterizer state - cull mode, winding, depth clip
+@@ -3439 +3310,0 @@ namespace plume {
+-        // Depth bias
+@@ -3463 +3333,0 @@ namespace plume {
+-        // Viewports
+@@ -3472 +3341,0 @@ namespace plume {
+-        // Scissors
+@@ -3481 +3349,0 @@ namespace plume {
+-        // Vertex buffers - use bitmask for per-slot tracking
+@@ -3492 +3359,0 @@ namespace plume {
+-        // Descriptor sets
+@@ -3501 +3367,0 @@ namespace plume {
+-        // Push constants
+@@ -3529 +3394,0 @@ namespace plume {
+-            // Mark all state as needing rebind for next encoder
+@@ -3532 +3396,0 @@ namespace plume {
+-            // Clear state cache since we'll need to rebind everything
+@@ -3592 +3456 @@ namespace plume {
+-            // No need to do anything if residency sets are in use.
++
+@@ -3629,2 +3492,0 @@ namespace plume {
+-    // MetalCommandFence
+-
+@@ -3641,2 +3502,0 @@ namespace plume {
+-    // MetalCommandSemaphore
+-
+@@ -3654,2 +3513,0 @@ namespace plume {
+-    // MetalCommandQueue
+-
+@@ -3665 +3523 @@ namespace plume {
+-            // Automatically add residency set for device resources to all command buffers in the queue.
++
+@@ -3683 +3541 @@ namespace plume {
+-    void MetalCommandQueue::executeCommandLists(const RenderCommandList **commandLists, const uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, const uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
++    uint64_t MetalCommandQueue::executeCommandLists(const RenderCommandList **commandLists, const uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, const uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, const uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
+@@ -3685,0 +3544,3 @@ namespace plume {
++        assert((waitSemaphoreCount == 0) ||
++            ((waitSemaphores != nullptr) &&
++             (waitSemaphoreStages != nullptr)));
+@@ -3687 +3547,0 @@ namespace plume {
+-        // Create a new command buffer to encode the wait semaphores into
+@@ -3700,2 +3559,0 @@ namespace plume {
+-        // Commit all command lists except the last one
+-
+@@ -3711 +3568,0 @@ namespace plume {
+-        // Use the last command list to mark the end and signal the fence
+@@ -3716,2 +3573,10 @@ namespace plume {
+-            interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
+-                dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
++            MetalCommandFence *metalFence =
++                static_cast<MetalCommandFence *>(signalFence);
++            metalFence->completionState.store(
++                RenderCommandFenceStatus::Pending,
++                std::memory_order_release);
++            interfaceCommandList->mtl->addCompletedHandler([metalFence](MTL::CommandBuffer* cmdBuffer) {
++                metalFence->completionState.store(
++                    RenderCommandFenceStatus::Ready,
++                    std::memory_order_release);
++                dispatch_semaphore_signal(metalFence->semaphore);
+@@ -3727,0 +3593,9 @@ namespace plume {
++        return ++submissionSequence;
++    }
++
++    RenderCommandFenceStatus MetalCommandQueue::queryCommandFenceStatus(
++        RenderCommandFence *fence) {
++        assert(fence != nullptr);
++        const MetalCommandFence *metalFence =
++            static_cast<const MetalCommandFence *>(fence);
++        return metalFence->completionState.load(std::memory_order_acquire);
+@@ -3736,2 +3609,0 @@ namespace plume {
+-    // MetalPipelineLayout
+-
+@@ -3759 +3631 @@ namespace plume {
+-                // Track descriptor set for later resource binding
++
+@@ -3763 +3634,0 @@ namespace plume {
+-            // Bind argument buffer
+@@ -3773,2 +3643,0 @@ namespace plume {
+-    // MetalDevice
+-
+@@ -3781 +3649,0 @@ namespace plume {
+-        // Device Selection
+@@ -3800 +3668 @@ namespace plume {
+-        description.driverVersion = 1; // Unavailable
++        description.driverVersion = 1;
+@@ -3809 +3676,0 @@ namespace plume {
+-        // Setup blit, clear and resolve shaders / pipelines
+@@ -3816,4 +3682,0 @@ namespace plume {
+-        // Fill capabilities.
+-        // https://developer.apple.com/documentation/metal/device-inspection
+-        // TODO: Support Raytracing.
+-        // capabilities.raytracing = mtl->supportsRaytracing();
+@@ -3904 +3767 @@ namespace plume {
+-        // TODO: Unimplemented (Raytracing).
++
+@@ -3949 +3812 @@ namespace plume {
+-        // TODO: Unimplemented (Raytracing).
++
+@@ -3953 +3816 @@ namespace plume {
+-        // TODO: Unimplemented (Raytracing).
++
+@@ -3957 +3820 @@ namespace plume {
+-        // TODO: Unimplemented (Raytracing).
++
+@@ -4056 +3918,0 @@ namespace plume {
+-        // Destroy
+@@ -4109 +3970,0 @@ namespace plume {
+-        // Create and cache the shader functions
+@@ -4114 +3974,0 @@ namespace plume {
+-        // Create depth stencil clear states
+@@ -4147 +4006,0 @@ namespace plume {
+-        // If not found, create new pipeline state while holding the lock
+@@ -4189,2 +4047,0 @@ namespace plume {
+-    // MetalInterface
+-
+@@ -4195 +4051,0 @@ namespace plume {
+-        // Fill device names.
+@@ -4205 +4060,0 @@ namespace plume {
+-    // TODO: NEW - Incorporate preferredDeviceName (new)
+@@ -4223,2 +4077,0 @@ namespace plume {
+-    // Global creation function.
+-
+diff --git a/plume_metal.h b/plume_metal.h
+index 59ae129..7ebbff3 100644
+--- a/plume_metal.h
++++ b/plume_metal.h
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -9,0 +6 @@
++#include <atomic>
+@@ -21 +17,0 @@
+-/// macOS
+@@ -26 +21,0 @@
+-/// iOS
+@@ -31 +25,0 @@
+-/// Apple Silicon (iOS, tvOS, macOS)
+@@ -36 +29,0 @@
+-/// Apple Silicon on macOS
+@@ -100 +92,0 @@ namespace plume {
+-        // Marks from which descriptor set we'll invalidate from
+@@ -104 +96 @@ namespace plume {
+-            value = 0x7; // All 3 bits set
++            value = 0x7;
+@@ -125 +116,0 @@ namespace plume {
+-        // Marks from which descriptor set we'll invalidate from
+@@ -128 +118,0 @@ namespace plume {
+-        // Specific dirty vertex buffer slots (bitmask)
+@@ -132 +122 @@ namespace plume {
+-            value = 0x1FF; // All 9 bits set
++            value = 0x1FF;
+@@ -243 +232,0 @@ namespace plume {
+-        // Present wait
+@@ -258,0 +248 @@ namespace plume {
++        bool supportsTextureCopySource() const override;
+@@ -304 +294,2 @@ namespace plume {
+-        virtual void queryResults() override;
++        virtual void queryResults(
++            uint32_t firstQuery, uint32_t queryCount) override;
+@@ -369 +359,0 @@ namespace plume {
+-        // State cache to track last-bound values and avoid redundant encoder calls
+@@ -371 +361 @@ namespace plume {
+-            // Pipeline state
++
+@@ -375 +364,0 @@ namespace plume {
+-            // Depth/stencil state
+@@ -379 +367,0 @@ namespace plume {
+-            // Rasterizer state
+@@ -384 +371,0 @@ namespace plume {
+-            // Depth bias
+@@ -389 +375,0 @@ namespace plume {
+-            // Viewport/scissor
+@@ -393 +378,0 @@ namespace plume {
+-            // Push constants
+@@ -526,0 +512,2 @@ namespace plume {
++        std::atomic<RenderCommandFenceStatus> completionState{
++            RenderCommandFenceStatus::Unknown};
+@@ -542,0 +530 @@ namespace plume {
++        uint64_t submissionSequence = 0;
+@@ -548 +536,3 @@ namespace plume {
+-        void executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        uint64_t executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        RenderCommandFenceStatus queryCommandFenceStatus(
++            RenderCommandFence *fence) override;
+@@ -703 +692,0 @@ namespace plume {
+-        // Resolve functionality
+@@ -706 +694,0 @@ namespace plume {
+-        // Clear functionality
+@@ -718 +705,0 @@ namespace plume {
+-        // Blit functionality
+@@ -721 +707,0 @@ namespace plume {
+-        // Placeholder null buffer
+@@ -724 +709,0 @@ namespace plume {
+-        // Resource residency management
+@@ -729 +713,0 @@ namespace plume {
+-        // Counter sets for query pools
+@@ -763 +746,0 @@ namespace plume {
+-        // Shader libraries and pipeline states used for emulated operations
+diff --git a/plume_query_read_state.h b/plume_query_read_state.h
+new file mode 100644
+index 0000000..8228760
+--- /dev/null
++++ b/plume_query_read_state.h
+@@ -0,0 +1,20 @@
++#pragma once
++
++#include <cstdint>
++
++namespace plume {
++
++    struct QueryReadState {
++        uint32_t first = 0;
++        uint32_t count = 0;
++        void invalidate() { first = 0; count = 0; }
++        void completed(uint32_t readFirst, uint32_t readCount) {
++            first = readFirst;
++            count = readCount;
++        }
++        bool contains(uint32_t queryFirst, uint32_t queryCount) const {
++            return queryCount > 0 && queryFirst >= first && queryFirst - first <= count &&
++                queryCount <= count - (queryFirst - first);
++        }
++    };
++}
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index 2048557..b89404d 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -10,0 +7 @@
++#include <filesystem>
+@@ -12,0 +10,2 @@
++#include "plume_clock_calibration.h"
++#include "plume_query_read_state.h"
+@@ -15 +13,0 @@ namespace plume {
+-    // Interfaces.
+@@ -29 +26,0 @@ namespace plume {
+-        // Concrete implementation shortcuts.
+@@ -75,0 +73,6 @@ namespace plume {
++    enum class RenderCommandFenceStatus : uint8_t {
++        Unknown = 0,
++        Pending = 1,
++        Ready = 2
++    };
++
+@@ -77,3 +79,0 @@ namespace plume {
+-        // Descriptor indices correspond to the index assuming the descriptor set is one contiguous array. They DO NOT correspond to the bindings, which can be sparse.
+-        // User code should derive these indices on its own by looking at the order the bindings were assigned during set creation along with the descriptor count and
+-        // assume it was all allocated in one contiguous array. This allows efficient mapping between Vulkan and D3D12's descriptor models.
+@@ -97,0 +98 @@ namespace plume {
++        virtual bool supportsTextureCopySource() const = 0;
+@@ -104 +104,0 @@ namespace plume {
+-        // Only valid if displayTiming is enabled in capabilities.
+@@ -150 +150 @@ namespace plume {
+-        virtual void discardTexture(const RenderTexture* texture) = 0; // D3D12 only.
++        virtual void discardTexture(const RenderTexture* texture) = 0;
+@@ -154 +153,0 @@ namespace plume {
+-        // Concrete implementation shortcuts.
+@@ -200,0 +200,5 @@ namespace plume {
++
++        virtual bool getProfileClockCalibration(ProfileClockCalibration &sample) {
++            sample = {};
++            return false;
++        }
+@@ -201,0 +206,5 @@ namespace plume {
++
++        virtual bool sharesNativeQueue(
++            const RenderCommandQueue *other) const {
++            return this == other;
++        }
+@@ -204 +213,6 @@ namespace plume {
+-        virtual void executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores = nullptr, uint32_t waitSemaphoreCount = 0, RenderCommandSemaphore **signalSemaphores = nullptr, uint32_t signalSemaphoreCount = 0, RenderCommandFence *signalFence = nullptr) = 0;
++
++        virtual uint64_t executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores = nullptr, const RenderBarrierStages *waitSemaphoreStages = nullptr, uint32_t waitSemaphoreCount = 0, RenderCommandSemaphore **signalSemaphores = nullptr, uint32_t signalSemaphoreCount = 0, RenderCommandFence *signalFence = nullptr) = 0;
++        virtual RenderCommandFenceStatus queryCommandFenceStatus(
++            RenderCommandFence *fence) {
++            return RenderCommandFenceStatus::Unknown;
++        }
+@@ -207,3 +221,2 @@ namespace plume {
+-        // Concrete implementation shortcuts.
+-        inline void executeCommandLists(const RenderCommandList *commandList, RenderCommandFence *signalFence = nullptr) {
+-            executeCommandLists(&commandList, 1, nullptr, 0, nullptr, 0, signalFence);
++        inline uint64_t executeCommandLists(const RenderCommandList *commandList, RenderCommandFence *signalFence = nullptr) {
++            return executeCommandLists(&commandList, 1, nullptr, nullptr, 0, nullptr, 0, signalFence);
+@@ -219,0 +233,8 @@ namespace plume {
++    protected:
++        QueryReadState queryReadState;
++    public:
++
++        bool queryResultsValid(uint32_t first, uint32_t count) const {
++            return queryReadState.contains(first, count);
++        }
++        bool queryResultsValid() const { return queryResultsValid(0, getCount()); }
+@@ -221 +242,5 @@ namespace plume {
+-        virtual void queryResults() = 0;
++        virtual void queryResults(
++            uint32_t firstQuery, uint32_t queryCount) = 0;
++        void queryResults() {
++            queryResults(0, getCount());
++        }
+@@ -249,0 +275,2 @@ namespace plume {
++
++        virtual void setPipelineCachePath(const std::filesystem::path &) { }
+diff --git a/plume_render_interface_types.h b/plume_render_interface_types.h
+index 9dcfedf..fdb3b8e 100644
+--- a/plume_render_interface_types.h
++++ b/plume_render_interface_types.h
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -38 +34 @@ namespace plume {
+-    // Native HWND handle to the target window.
++
+@@ -77,2 +72,0 @@ namespace plume {
+-    // Enums.
+-
+@@ -86 +80 @@ namespace plume {
+-    
++
+@@ -480 +474 @@ namespace plume {
+-    
++
+@@ -511,2 +504,0 @@ namespace plume {
+-    // Global functions.
+-
+@@ -535 +527 @@ namespace plume {
+-        case RenderFormat::D32_FLOAT_S8_UINT: // Has 24 unused bits
++        case RenderFormat::D32_FLOAT_S8_UINT:
+@@ -715,2 +706,0 @@ namespace plume {
+-    // Concrete structs.
+-
+@@ -765 +755 @@ namespace plume {
+-    
++
+@@ -767 +757 @@ namespace plume {
+-        // Valid range is [-8, 7].
++
+@@ -1060,2 +1050,2 @@ namespace plume {
+-        }      
+-        
++        }
++
+@@ -1147 +1136,0 @@ namespace plume {
+-        // The capability for presentWait must be supported by the RenderDevice.
+@@ -1177 +1166 @@ namespace plume {
+-        // Semantic name and index and location must be specified for both backends, but each attribute will only be read by the backend that uses them.
++
+@@ -1368,2 +1356,0 @@ namespace plume {
+-        // IMPORTANT: State update support must be true for this option to work. The pipeline creation will not work if this option
+-        // is enabled and the device doesn't support it. This option is only supported by Raytracing Tier 1.1 devices.
+@@ -1404 +1391 @@ namespace plume {
+-        // The type of descriptor range. The descriptor can't change this during its lifetime.
++
+@@ -1407,3 +1393,0 @@ namespace plume {
+-        // How many descriptors should be assigned and allocated for this range. When the range
+-        // is boundless (see RenderDescriptorSetDesc::lastRangeIsBoundless), this indicates the upper
+-        // bound of the variable sized array (TBD if this implies additional memory consumption).
+@@ -1412 +1395,0 @@ namespace plume {
+-        // The shader binding number the descriptor will correspond to.
+@@ -1415 +1397,0 @@ namespace plume {
+-        // An optional immutable sampler to build in statically into the pipeline layout.
+@@ -1427 +1409 @@ namespace plume {
+-    
++
+@@ -1435 +1417 @@ namespace plume {
+-        
++
+@@ -1447 +1429 @@ namespace plume {
+-        uint32_t offset = 0; // Must be aligned to 4-bytes for DX12.
++        uint32_t offset = 0;
+@@ -1462 +1443,0 @@ namespace plume {
+-    // D3D12 only.
+@@ -1667 +1647,0 @@ namespace plume {
+-        // Private backend data. Can go unused.
+@@ -1692 +1672 @@ namespace plume {
+-        // The instances buffer data must be uploaded to the GPU by the API user.
++
+@@ -1700 +1679,0 @@ namespace plume {
+-        // Private backend data. Can go unused.
+@@ -1737 +1715,0 @@ namespace plume {
+-        // Convenience index for selecting a different binding in the table. offset must add startIndex * stride.
+@@ -1749 +1727 @@ namespace plume {
+-        // The table buffer data must be uploaded to the GPU by the API user and submitted to dispatchRays().
++
+@@ -1752 +1729,0 @@ namespace plume {
+-        // This info will be requested by dispatchRays().
+@@ -1765 +1742 @@ namespace plume {
+-        // Geometry shaders.
++
+@@ -1768 +1744,0 @@ namespace plume {
+-        // Raytracing.
+@@ -1772 +1747,0 @@ namespace plume {
+-        // MSAA.
+@@ -1775 +1749,0 @@ namespace plume {
+-        // Resolve.
+@@ -1779 +1752,0 @@ namespace plume {
+-        // Bindless resources.
+@@ -1783 +1755,0 @@ namespace plume {
+-        // Buffers.
+@@ -1785,2 +1757 @@ namespace plume {
+-        
+-        // Samplers.
++
+@@ -1789 +1759,0 @@ namespace plume {
+-        // Present.
+@@ -1793 +1762,0 @@ namespace plume {
+-        // Framebuffers.
+@@ -1796 +1765,2 @@ namespace plume {
+-        // HDR.
++        bool unalignedBlockCompressedTextures = false;
++
+@@ -1799 +1768,0 @@ namespace plume {
+-        // Draw.
+@@ -1803 +1771,0 @@ namespace plume {
+-        // UMA.
+@@ -1806 +1773,0 @@ namespace plume {
+-        // GPU Upload heap.
+@@ -1809 +1775,0 @@ namespace plume {
+-        // Query Pools.
+diff --git a/plume_rt64_profile_interval.h b/plume_rt64_profile_interval.h
+new file mode 100644
+index 0000000..3ef6fe2
+--- /dev/null
++++ b/plume_rt64_profile_interval.h
+@@ -0,0 +1,30 @@
++// Copyright (c) 2024 renderbag and contributors. All rights reserved.
++// Licensed under the MIT license. See LICENSE file for details.
++
++#pragma once
++
++#include <charconv>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++
++namespace plume {
++
++    inline bool rt64ProfileIntervalInstrumentationEnabled() {
++        static const bool enabled = []() {
++            const char *text = std::getenv("RT64_PROFILE_INTERVAL");
++            if ((text == nullptr) || (text[0] == '\0')) {
++                return false;
++            }
++
++            const char *end = text + std::strlen(text);
++            uint64_t interval = 0;
++            const auto result = std::from_chars(text, end, interval);
++            return (result.ec == std::errc()) &&
++                (result.ptr == end) &&
++                (interval >= 30) &&
++                (interval <= 1'000'000ULL);
++        }();
++        return enabled;
++    }
++}
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f1dd503..014fb5e 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -9 +5 @@
+-#define VOLK_IMPLEMENTATION 
++#define VOLK_IMPLEMENTATION
+@@ -13,0 +10,3 @@
++#include <array>
++#include <atomic>
++#include <chrono>
+@@ -15,0 +15,3 @@
++#include <cstdio>
++#include <cstdlib>
++#include <fstream>
+@@ -17,0 +20,7 @@
++#include "plume_rt64_profile_interval.h"
++#include "common/rt64_performance_profiler.h"
++
++#if defined(_WIN32)
++#include <windows.h>
++#endif
++
+@@ -27,3 +35,0 @@
+-// TODO:
+-// - Fix resource pools.
+-
+@@ -31 +36,0 @@ namespace plume {
+-    // Backend constants.
+@@ -33 +38,87 @@ namespace plume {
+-    // Required buffer alignment for acceleration structures.
++    static constexpr uint32_t VulkanSubmissionPhaseCapacity = 32768;
++
++    struct VulkanSubmissionPhaseRecord {
++        uint64_t ordinal = 0;
++        uint64_t timestampNs = 0;
++        uint64_t nativeSequence = 0;
++        uint32_t familyIndex = 0;
++        uint32_t queueIndex = 0;
++        uint32_t commandListType = 0;
++        uint32_t commandListCount = 0;
++        uint32_t waitSemaphoreCount = 0;
++        uint32_t signalSemaphoreCount = 0;
++        uint32_t signalsFence = 0;
++    };
++
++    struct VulkanSubmissionPhaseTrace {
++        std::atomic_uint64_t recordCount = 0;
++        std::array<VulkanSubmissionPhaseRecord,
++            VulkanSubmissionPhaseCapacity> records{};
++    };
++
++    static bool vulkanSubmissionPhaseEnabled() {
++        static const bool enabled =
++            std::getenv("JFC_VULKAN_SUBMIT_PHASE_TRACE") != nullptr;
++        return enabled;
++    }
++
++    static VulkanSubmissionPhaseTrace &vulkanSubmissionPhaseTrace() {
++        static VulkanSubmissionPhaseTrace trace;
++        return trace;
++    }
++
++    static void recordVulkanSubmissionPhase(
++        uint64_t nativeSequence,
++        uint32_t familyIndex,
++        uint32_t queueIndex,
++        RenderCommandListType commandListType,
++        uint32_t commandListCount,
++        uint32_t waitSemaphoreCount,
++        uint32_t signalSemaphoreCount,
++        bool signalsFence
++    ) {
++        if (!vulkanSubmissionPhaseEnabled()) {
++            return;
++        }
++
++        VulkanSubmissionPhaseTrace &trace = vulkanSubmissionPhaseTrace();
++        const uint64_t ordinal = trace.recordCount.fetch_add(
++            1, std::memory_order_relaxed);
++        VulkanSubmissionPhaseRecord &record =
++            trace.records[ordinal % VulkanSubmissionPhaseCapacity];
++        record.ordinal = ordinal;
++        record.timestampNs = static_cast<uint64_t>(
++            std::chrono::duration_cast<std::chrono::nanoseconds>(
++                std::chrono::steady_clock::now().time_since_epoch()).count());
++        record.nativeSequence = nativeSequence;
++        record.familyIndex = familyIndex;
++        record.queueIndex = queueIndex;
++        record.commandListType = static_cast<uint32_t>(commandListType);
++        record.commandListCount = commandListCount;
++        record.waitSemaphoreCount = waitSemaphoreCount;
++        record.signalSemaphoreCount = signalSemaphoreCount;
++        record.signalsFence = signalsFence ? 1U : 0U;
++    }
++
++    static void dumpVulkanSubmissionPhase() {
++        if (!vulkanSubmissionPhaseEnabled()) {
++            return;
++        }
++
++        const VulkanSubmissionPhaseTrace &trace =
++            vulkanSubmissionPhaseTrace();
++        const uint64_t total = trace.recordCount.load(
++            std::memory_order_relaxed);
++        const uint64_t retained = std::min<uint64_t>(
++            total, VulkanSubmissionPhaseCapacity);
++        const uint64_t firstOrdinal = total - retained;
++
++        for (uint64_t ordinal = firstOrdinal; ordinal < total; ordinal++) {
++            const VulkanSubmissionPhaseRecord &record =
++                trace.records[ordinal % VulkanSubmissionPhaseCapacity];
++
++        }
++
++        std::fflush(stderr);
++    }
++
+@@ -36 +126,0 @@ namespace plume {
+-    // Required buffer alignment for shader binding table.
+@@ -39,3 +128,0 @@ namespace plume {
+-    // Controls the maximum amount of native queues the backend will create per queue family.
+-    // Command queues are created as virtual queues on top of the native queues provided by Vulkan,
+-    // so they're not under the limit set by the the device or the backend.
+@@ -44,2 +130,0 @@ namespace plume {
+-    // Required extensions.
+-
+@@ -66 +151 @@ namespace plume {
+-        // Tells the system Vulkan loader to enumerate portability drivers, if supported.
++
+@@ -70 +155 @@ namespace plume {
+-    
++
+@@ -74 +159 @@ namespace plume {
+-    
++
+@@ -75,0 +161,4 @@ namespace plume {
++        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
++#if defined(VK_KHR_calibrated_timestamps)
++        VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
++#endif
+@@ -90 +179 @@ namespace plume {
+-        // Vulkan spec requires this to be enabled if supported by the driver.
++
+@@ -94,2 +182,0 @@ namespace plume {
+-    // Common functions.
+-
+@@ -347 +434 @@ namespace plume {
+-            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; 
++            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+@@ -349 +436 @@ namespace plume {
+-            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;  
++            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+@@ -604 +691 @@ namespace plume {
+-    
++
+@@ -638,0 +726,8 @@ namespace plume {
++    static VkPipelineStageFlags toSemaphoreWaitStageFlags(
++        RenderBarrierStages stages, bool geometrySupported, bool rtSupported)
++    {
++
++        return toStageFlags(stages, geometrySupported, rtSupported) &
++            ~VK_PIPELINE_STAGE_HOST_BIT;
++    }
++
+@@ -693 +788 @@ namespace plume {
+-    
++
+@@ -805,2 +899,0 @@ namespace plume {
+-    // Underlying implementation for popcount
+-    // https://stackoverflow.com/questions/109023/how-to-count-the-number-of-set-bits-in-a-32-bit-integer
+@@ -813,2 +905,0 @@ namespace plume {
+-    // VulkanBuffer
+-
+@@ -837 +928 @@ namespace plume {
+-        
++
+@@ -841 +932 @@ namespace plume {
+-        
++
+@@ -843,3 +934 @@ namespace plume {
+-        /* TODO: Debug pools.
+-        createInfo.pool = (pool != nullptr) ? pool->vk : VK_NULL_HANDLE;
+-        */
++
+@@ -879 +967,0 @@ namespace plume {
+-        // The specification imposes an alignment requirement for SBTs.
+@@ -936,2 +1023,0 @@ namespace plume {
+-    // VulkanBufferFormattedView
+-
+@@ -964,2 +1049,0 @@ namespace plume {
+-    // VulkanTexture
+-
+@@ -1037 +1121 @@ namespace plume {
+-    
++
+@@ -1050 +1134 @@ namespace plume {
+-        
++
+@@ -1074,2 +1157,0 @@ namespace plume {
+-    // VulkanTextureView
+-
+@@ -1115,2 +1196,0 @@ namespace plume {
+-    // VulkanAccelerationStructure
+-
+@@ -1145,2 +1224,0 @@ namespace plume {
+-    // VulkanDescriptorSetLayout
+-
+@@ -1152 +1229,0 @@ namespace plume {
+-        // Gather immutable sampler handles.
+@@ -1166,2 +1243 @@ namespace plume {
+-        
+-        // Create bindings.
++
+@@ -1195 +1271 @@ namespace plume {
+-        
++
+@@ -1210 +1286 @@ namespace plume {
+-        
++
+@@ -1224,2 +1299,0 @@ namespace plume {
+-    // VulkanPipelineLayout
+-
+@@ -1283,2 +1356,0 @@ namespace plume {
+-    // VulkanShader
+-
+@@ -1317,2 +1388,0 @@ namespace plume {
+-    // VulkanSampler
+-
+@@ -1355,2 +1424,0 @@ namespace plume {
+-    // VulkanPipeline
+-
+@@ -1367,2 +1434,0 @@ namespace plume {
+-    // VulkanComputePipeline
+-
+@@ -1393 +1459,2 @@ namespace plume {
+-        VkResult res = vkCreateComputePipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++        std::lock_guard lock(device->pipelineCacheMutex);
++        VkResult res = vkCreateComputePipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
+@@ -1415,2 +1481,0 @@ namespace plume {
+-    // VulkanGraphicsPipeline
+-
+@@ -1586 +1651 @@ namespace plume {
+-        
++
+@@ -1652 +1717,2 @@ namespace plume {
+-        VkResult res = vkCreateGraphicsPipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++        std::lock_guard lock(device->pipelineCacheMutex);
++        VkResult res = vkCreateGraphicsPipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
+@@ -1743,2 +1808,0 @@ namespace plume {
+-    // VulkanRaytracingPipeline
+-
+@@ -1753 +1816,0 @@ namespace plume {
+-        // Prepare all the vectors for the spec constants beforehand so they're not re-allocated.
+@@ -1858 +1921,2 @@ namespace plume {
+-        VkResult res = vkCreateRayTracingPipelinesKHR(device->vk, nullptr, nullptr, 1, &pipelineInfo, nullptr, &vk);
++        std::lock_guard lock(device->pipelineCacheMutex);
++        VkResult res = vkCreateRayTracingPipelinesKHR(device->vk, nullptr, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
+@@ -1866 +1930 @@ namespace plume {
+-    
++
+@@ -1883,2 +1946,0 @@ namespace plume {
+-    // VulkanDescriptorSet
+-
+@@ -1892 +1954 @@ namespace plume {
+-        
++
+@@ -1898 +1959,0 @@ namespace plume {
+-            // Ensure at least one entry is created for boundless ranges.
+@@ -1946 +2007 @@ namespace plume {
+-    
++
+@@ -2074,2 +2134,0 @@ namespace plume {
+-    // VulkanSwapChain
+-
+@@ -2134 +2193 @@ namespace plume {
+-        // Creates a wrapper around the window for storing and fetching sizes.
++
+@@ -2136 +2195 @@ namespace plume {
+-        
++
+@@ -2165 +2223,0 @@ namespace plume {
+-        // Pick an alpha compositing mode
+@@ -2177,2 +2235,7 @@ namespace plume {
+-        // Make sure maxImageCount is never below minImageCount, as it's allowed to be zero.
+-        surfaceCapabilities.maxImageCount = std::max(surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
++        this->desc.textureCount =
++            std::max(desc.textureCount, surfaceCapabilities.minImageCount);
++        if (surfaceCapabilities.maxImageCount != 0) {
++            this->desc.textureCount = std::min(
++                this->desc.textureCount, surfaceCapabilities.maxImageCount);
++        }
++        if (rt64ProfileIntervalInstrumentationEnabled()) {
+@@ -2180,2 +2243 @@ namespace plume {
+-        // Clamp the requested buffer count between the bounds of the surface capabilities.
+-        this->desc.textureCount = std::clamp(desc.textureCount, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
++        }
+@@ -2197 +2258,0 @@ namespace plume {
+-        // Check if the format we requested is part of the supported surface formats.
+@@ -2212 +2272,0 @@ namespace plume {
+-        // Pick the preferred color space, if not available, pick whatever first shows up on the list.
+@@ -2224 +2283,0 @@ namespace plume {
+-        // Sets the required presentation mode.
+@@ -2227 +2285,0 @@ namespace plume {
+-        // Pick an alpha compositing mode, prefer opaque over inherit.
+@@ -2239 +2296,0 @@ namespace plume {
+-        // Parent command queue should track this swap chain.
+@@ -2252 +2308,0 @@ namespace plume {
+-        // Remove tracking from the parent command queue.
+@@ -2282 +2338 @@ namespace plume {
+-        
++
+@@ -2290,3 +2346 @@ namespace plume {
+-        // Under MoltenVK, VK_SUBOPTIMAL_KHR does not result in a valid state for rendering. We intentionally
+-        // only check for this error during present to avoid having to synchronize manually against the semaphore
+-        // signalled by vkAcquireNextImageKHR.
++
+@@ -2315 +2368,0 @@ namespace plume {
+-        // Don't recreate the swap chain at all if the window doesn't have a valid size.
+@@ -2320 +2372,0 @@ namespace plume {
+-        // Destroy any image view references to the current swap chain.
+@@ -2323 +2374,0 @@ namespace plume {
+-        // Query surface capabilities to get the valid extent bounds.
+@@ -2327,3 +2377,0 @@ namespace plume {
+-        // Clamp the extent to the surface capabilities' min/max bounds.
+-        // This is required because the window size may differ from the valid surface extent
+-        // (e.g., due to window decorations, compositor behavior, or timing issues).
+@@ -2341,0 +2390,6 @@ namespace plume {
++        textureCopySourceSupported =
++            (surfaceCapabilities.supportedUsageFlags &
++             VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
++        if (textureCopySourceSupported) {
++            createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++        }
+@@ -2355 +2408,0 @@ namespace plume {
+-        // Store the chosen present mode to identify later whether the swapchain needs to be recreated.
+@@ -2358 +2410,0 @@ namespace plume {
+-        // Reset present counter.
+@@ -2373,0 +2426,3 @@ namespace plume {
++        if (rt64ProfileIntervalInstrumentationEnabled()) {
++
++        }
+@@ -2383 +2437,0 @@ namespace plume {
+-        // Assign the swap chain images to the buffer resources.
+@@ -2410,2 +2464 @@ namespace plume {
+-        // Immediate mode must be supported and the presentation mode will only be used on the next resize.
+-        // needsResize() will return as true as long as the created and required present mode do not match.
++
+@@ -2415 +2468 @@ namespace plume {
+-        // FIFO is guaranteed to be supported.
++
+@@ -2432,0 +2486,4 @@ namespace plume {
++    bool VulkanSwapChain::supportsTextureCopySource() const {
++        return textureCopySourceSupported;
++    }
++
+@@ -2474 +2531 @@ namespace plume {
+-        // The attributes width and height members do not include the border.
++
+@@ -2513,2 +2569,0 @@ namespace plume {
+-    // VulkanFramebuffer
+-    
+@@ -2581,2 +2636 @@ namespace plume {
+-                // Base image view is configured for sampling depth. For framebuffer attachment,
+-                // create a separate view configured for both depth and stencil.
++
+@@ -2597,2 +2650,0 @@ namespace plume {
+-            // Upgrade the operations to NONE if supported. Fixes the following validation issue: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2349
+-            // We prefer to just ignore this potential hazard on older Vulkan versions as it just seems to be an edge case for some hardware.
+@@ -2633 +2685 @@ namespace plume {
+-        
++
+@@ -2680,2 +2731,0 @@ namespace plume {
+-    // VulkanQueryPool
+-
+@@ -2692 +2742 @@ namespace plume {
+-        
++
+@@ -2698 +2748 @@ namespace plume {
+-        
++
+@@ -2706,2 +2756,14 @@ namespace plume {
+-    void VulkanQueryPool::queryResults() {
+-	    VkResult res = vkGetQueryPoolResults(device->vk, vk, 0, uint32_t(results.size()), sizeof(uint64_t) * results.size(), results.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
++    void VulkanQueryPool::queryResults(
++        uint32_t firstQuery, uint32_t queryCount) {
++        queryReadState.invalidate();
++        if (firstQuery > results.size() || queryCount > results.size() - firstQuery) return;
++
++        assert(firstQuery <= results.size());
++        assert(queryCount <= results.size() - firstQuery);
++        if (queryCount == 0) {
++            return;
++        }
++	    VkResult res = vkGetQueryPoolResults(device->vk, vk, firstQuery,
++            queryCount, sizeof(uint64_t) * queryCount,
++            results.data() + firstQuery, sizeof(uint64_t),
++            VK_QUERY_RESULT_64_BIT);
+@@ -2713 +2774,0 @@ namespace plume {
+-        // Conversion sourced from Godot Engine's Vulkan Rendering Driver.
+@@ -2720 +2781 @@ namespace plume {
+-    
++
+@@ -2725 +2786 @@ namespace plume {
+-    
++
+@@ -2729 +2790 @@ namespace plume {
+-    
++
+@@ -2734 +2794,0 @@ namespace plume {
+-        // Convert results to timestamps.
+@@ -2736,0 +2797 @@ namespace plume {
++        if (!(timestampPeriod >= 1.0 / 65536.0 && timestampPeriod < 281474976710656.0)) return;
+@@ -2738 +2799,3 @@ namespace plume {
+-        for (uint64_t &result : results) {
++        for (uint32_t queryIndex = firstQuery;
++             queryIndex < firstQuery + queryCount; ++queryIndex) {
++            uint64_t &result = results[queryIndex];
+@@ -2743,0 +2807 @@ namespace plume {
++        queryReadState.completed(firstQuery, queryCount);
+@@ -2754,2 +2817,0 @@ namespace plume {
+-    // VulkanCommandList
+-
+@@ -2795,0 +2858,2 @@ namespace plume {
++        RT64::PerformanceScope scope(RT64::PerformanceCategory::CPU,
++            "Backend.Vulkan.CommandBegin", reinterpret_cast<uintptr_t>(vk));
+@@ -2809,0 +2874,2 @@ namespace plume {
++        RT64::PerformanceScope scope(RT64::PerformanceCategory::CPU,
++            "Backend.Vulkan.CommandEnd", reinterpret_cast<uintptr_t>(vk));
+@@ -2848,2 +2914,2 @@ namespace plume {
+-            bufferMemoryBarrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT; // TODO
+-            bufferMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT; // TODO
++            bufferMemoryBarrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
++            bufferMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+@@ -2866,2 +2932,2 @@ namespace plume {
+-            imageMemoryBarrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT; // TODO
+-            imageMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT; // TODO
++            imageMemoryBarrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
++            imageMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+@@ -2880 +2946 @@ namespace plume {
+-        
++
+@@ -2914 +2980 @@ namespace plume {
+-        rayGenSbt.size = rayGen.stride; // RayGen is a special case where the size must be the same as the stride.
++        rayGenSbt.size = rayGen.stride;
+@@ -2934 +3000 @@ namespace plume {
+-    
++
+@@ -2977 +3043 @@ namespace plume {
+-        
++
+@@ -3038 +3104 @@ namespace plume {
+-            // Input slots aren't actually used by Vulkan as the stride is baked into the pipeline, but we validate it for the sake of consistency with D3D12.
++
+@@ -3073 +3139 @@ namespace plume {
+-            // Single element fast path.
++
+@@ -3093 +3159 @@ namespace plume {
+-            // Single element fast path.
++
+@@ -3203 +3269 @@ namespace plume {
+-        
++
+@@ -3232 +3298,31 @@ namespace plume {
+-        else {
++        else if ((dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
++            assert(dstBuffer != nullptr);
++            assert(srcTexture != nullptr);
++
++            const uint32_t blockWidth = RenderFormatBlockWidth(srcTexture->desc.format);
++            VkBufferImageCopy imageCopy = {};
++            imageCopy.bufferOffset = dstLocation.placedFootprint.offset;
++            imageCopy.bufferRowLength = ((dstLocation.placedFootprint.rowWidth + blockWidth - 1) / blockWidth) * blockWidth;
++            imageCopy.bufferImageHeight = ((dstLocation.placedFootprint.height + blockWidth - 1) / blockWidth) * blockWidth;
++            imageCopy.imageSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);
++            imageCopy.imageSubresource.baseArrayLayer = srcLocation.subresource.arrayIndex;
++            imageCopy.imageSubresource.layerCount = 1;
++            imageCopy.imageSubresource.mipLevel = srcLocation.subresource.mipLevel;
++            imageCopy.imageOffset.x = (srcBox != nullptr) ? srcBox->left : 0;
++            imageCopy.imageOffset.y = (srcBox != nullptr) ? srcBox->top : 0;
++            imageCopy.imageOffset.z = (srcBox != nullptr) ? srcBox->front : 0;
++            imageCopy.imageExtent.width = (srcBox != nullptr)
++                ? srcBox->right - srcBox->left
++                : dstLocation.placedFootprint.width;
++            imageCopy.imageExtent.height = (srcBox != nullptr)
++                ? srcBox->bottom - srcBox->top
++                : dstLocation.placedFootprint.height;
++            imageCopy.imageExtent.depth = (srcBox != nullptr)
++                ? srcBox->back - srcBox->front
++                : dstLocation.placedFootprint.depth;
++            vkCmdCopyImageToBuffer(vk, srcTexture->vk, toImageLayout(srcTexture->textureLayout), dstBuffer->vk, 1, &imageCopy);
++        }
++        else if ((dstLocation.type == RenderTextureCopyType::SUBRESOURCE) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
++            assert(dstTexture != nullptr);
++            assert(srcTexture != nullptr);
++
+@@ -3264,0 +3361,3 @@ namespace plume {
++        else {
++            assert(false && "Unsupported texture copy direction.");
++        }
+@@ -3272 +3371 @@ namespace plume {
+-        
++
+@@ -3367 +3466 @@ namespace plume {
+-    
++
+@@ -3452 +3551 @@ namespace plume {
+-        // Not required in Vulkan.
++
+@@ -3471 +3570 @@ namespace plume {
+-        
++
+@@ -3500,2 +3598,0 @@ namespace plume {
+-    // VulkanCommandFence
+-
+@@ -3523,2 +3619,0 @@ namespace plume {
+-    // VulkanCommandSemaphore
+-
+@@ -3546,2 +3640,0 @@ namespace plume {
+-    // VulkanCommandQueue
+-
+@@ -3562,0 +3656,65 @@ namespace plume {
++    bool VulkanCommandQueue::sharesNativeQueue(
++        const RenderCommandQueue *other) const {
++        const VulkanCommandQueue *otherQueue =
++            dynamic_cast<const VulkanCommandQueue *>(other);
++        return (otherQueue != nullptr) && (queue == otherQueue->queue);
++    }
++
++    bool VulkanCommandQueue::getProfileClockCalibration(ProfileClockCalibration &sample) {
++        sample = {};
++        if (!device->profileCalibrationExtension) return false;
++        const bool khr = device->profileCalibrationExtension == 2;
++        const auto domains = reinterpret_cast<PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT>(
++            vkGetInstanceProcAddr(device->renderInterface->instance,
++                khr ? "vkGetPhysicalDeviceCalibrateableTimeDomainsKHR" : "vkGetPhysicalDeviceCalibrateableTimeDomainsEXT"));
++        const auto timestamps = reinterpret_cast<PFN_vkGetCalibratedTimestampsEXT>(
++            vkGetDeviceProcAddr(device->vk, khr ? "vkGetCalibratedTimestampsKHR" : "vkGetCalibratedTimestampsEXT"));
++        if (!domains || !timestamps) return false;
++
++        VkTimeDomainEXT available[16] = {};
++        uint32_t count = 16;
++        if (domains(device->physicalDevice, &count, available) != VK_SUCCESS) return false;
++#ifdef _WIN32
++        constexpr auto hostDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT;
++        LARGE_INTEGER frequency;
++        if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return false;
++        sample.hostClock = ProfileHostClock::QueryPerformanceCounter;
++        sample.hostFrequency = uint64_t(frequency.QuadPart);
++#else
++        constexpr auto hostDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT;
++        sample.hostClock = ProfileHostClock::Monotonic;
++        sample.hostFrequency = 1000000000;
++#endif
++        bool host = false, gpu = false;
++        for (uint32_t i = 0; i < count; ++i) {
++            host |= available[i] == hostDomain;
++            gpu |= available[i] == VK_TIME_DOMAIN_DEVICE_EXT;
++        }
++        if (!host || !gpu) return false;
++        VkQueueFamilyProperties families[32] = {};
++        uint32_t familyCount = 32;
++        vkGetPhysicalDeviceQueueFamilyProperties(device->physicalDevice, &familyCount, families);
++        if (familyIndex >= familyCount || familyIndex >= 32) return false;
++        sample.timestampValidBits = families[familyIndex].timestampValidBits;
++        if (!sample.timestampValidBits || sample.timestampValidBits > 64) return false;
++        VkCalibratedTimestampInfoEXT info[2] = {};
++        info[0].sType = info[1].sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_EXT;
++        info[0].timeDomain = VK_TIME_DOMAIN_DEVICE_EXT;
++        info[1].timeDomain = hostDomain;
++        uint64_t values[2] = {}, deviation = 0;
++        if (timestamps(device->vk, 2, info, values, &deviation) != VK_SUCCESS || !deviation) return false;
++        const double period = device->physicalDeviceProperties.limits.timestampPeriod;
++        if (sample.timestampValidBits < 64) {
++            const uint64_t wrapTicks = uint64_t(1) << sample.timestampValidBits;
++            values[0] &= wrapTicks - 1;
++            if (!profileVulkanNanoseconds(wrapTicks, period, sample.gpuWrapNanoseconds)) return false;
++        }
++        if (!profileVulkanNanoseconds(values[0], period, sample.gpuNanoseconds)) return false;
++        const double effectivePeriod = double(uint64_t(period * 65536.0)) / 65536.0;
++        sample.queryScaleErrorPartsPerBillion = (period / effectivePeriod - 1.0) * 1000000000.0;
++        sample.hostTicks = values[1];
++        sample.maximumDeviationKnown = true;
++        sample.maximumDeviationNanoseconds = deviation;
++        return true;
++    }
++
+@@ -3571 +3729 @@ namespace plume {
+-    void VulkanCommandQueue::executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
++    uint64_t VulkanCommandQueue::executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
+@@ -3573,0 +3732,3 @@ namespace plume {
++        assert((waitSemaphoreCount == 0) ||
++            ((waitSemaphores != nullptr) &&
++             (waitSemaphoreStages != nullptr)));
+@@ -3577,0 +3739 @@ namespace plume {
++        thread_local std::vector<VkPipelineStageFlags> waitStageVector;
+@@ -3580,0 +3743 @@ namespace plume {
++        waitStageVector.clear();
+@@ -3581,0 +3745,2 @@ namespace plume {
++        const bool geometryEnabled = device->capabilities.geometryShader;
++        const bool rtEnabled = device->capabilities.raytracing;
+@@ -3584,0 +3750,3 @@ namespace plume {
++            waitStageVector.emplace_back(toSemaphoreWaitStageFlags(
++                waitSemaphoreStages[i], geometryEnabled, rtEnabled));
++            assert(waitStageVector.back() != 0);
+@@ -3604 +3771,0 @@ namespace plume {
+-        const VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+@@ -3605,0 +3773,2 @@ namespace plume {
++
++            assert(waitStageVector.size() == waitSemaphoreVector.size());
+@@ -3608 +3777 @@ namespace plume {
+-            submitInfo.pWaitDstStageMask = &waitStages;
++            submitInfo.pWaitDstStageMask = waitStageVector.data();
+@@ -3622,0 +3792,11 @@ namespace plume {
++        uint64_t nativeSubmissionSequence = 0;
++        uint64_t submissionFailureOccurrence = 0;
++        uint64_t lastSuccessfulSubmissionSequence = 0;
++        uint32_t virtualQueueCount = 0;
++        const bool diagnosticProfile =
++            rt64ProfileIntervalInstrumentationEnabled();
++        const auto queueWaitStart = diagnosticProfile
++            ? std::chrono::steady_clock::now()
++            : std::chrono::steady_clock::time_point{};
++        std::chrono::steady_clock::time_point submitStart;
++        std::chrono::steady_clock::time_point submitEnd;
+@@ -3624,2 +3804,45 @@ namespace plume {
+-            const std::scoped_lock queueLock(*queue->mutex);
+-            res = vkQueueSubmit(queue->vk, 1, &submitInfo, submitFence);
++            RT64::PerformanceScope queueWait(RT64::PerformanceCategory::Wait,
++                "Backend.Vulkan.QueueMutexWait", reinterpret_cast<uintptr_t>(queue->vk));
++            const std::unique_lock queueLock(*queue->mutex);
++            queueWait.end();
++            if (diagnosticProfile) {
++                submitStart = std::chrono::steady_clock::now();
++            }
++            {
++                RT64::PerformanceScope driverSubmit(RT64::PerformanceCategory::CPU,
++                    "Backend.Vulkan.DriverSubmit", reinterpret_cast<uintptr_t>(queue->vk),
++                    commandListCount, (uint64_t(waitSemaphoreCount) << 32) | signalSemaphoreCount);
++                res = vkQueueSubmit(queue->vk, 1, &submitInfo, submitFence);
++            }
++            if (res == VK_SUCCESS) {
++                nativeSubmissionSequence = ++queue->submissionSequence;
++                recordVulkanSubmissionPhase(
++                    nativeSubmissionSequence,
++                    familyIndex,
++                    queueIndex,
++                    type,
++                    commandListCount,
++                    waitSemaphoreCount,
++                    signalSemaphoreCount,
++                    submitFence != VK_NULL_HANDLE);
++            }
++            else {
++                submissionFailureOccurrence = ++queue->submissionFailureCount;
++                lastSuccessfulSubmissionSequence = queue->submissionSequence;
++                virtualQueueCount = uint32_t(queue->virtualQueues.size());
++            }
++            if (diagnosticProfile) {
++                submitEnd = std::chrono::steady_clock::now();
++            }
++        }
++
++        if (diagnosticProfile) {
++            const auto microseconds = [](auto begin, auto end) {
++                return std::chrono::duration_cast<std::chrono::microseconds>(
++                    end - begin).count();
++            };
++            const auto mutexWait = microseconds(queueWaitStart, submitStart);
++            const auto driverSubmit = microseconds(submitStart, submitEnd);
++            if ((mutexWait >= 1000) || (driverSubmit >= 1000)) {
++
++            }
+@@ -3629,2 +3852,49 @@ namespace plume {
+-            fprintf(stderr, "vkQueueSubmit failed with error code 0x%X.\n", res);
+-            return;
++
++            const bool reportFailure =
++                (submissionFailureOccurrence &
++                    (submissionFailureOccurrence - 1U)) == 0U;
++            if (reportFailure) {
++                VkPipelineStageFlags waitStageOr = 0;
++                for (VkPipelineStageFlags waitStage : waitStageVector) {
++                    waitStageOr |= waitStage;
++                }
++                const VkPipelineStageFlags firstWaitStage =
++                    waitStageVector.empty() ? 0 : waitStageVector.front();
++                const VkPipelineStageFlags lastWaitStage =
++                    waitStageVector.empty() ? 0 : waitStageVector.back();
++                std::fprintf(
++                    stderr,
++                    "RT64_VULKAN_SUBMIT_FAILURE result=0x%X occurrence=%llu"
++                    " type=%u family=%u queue=%u virtual=%u"
++                    " last_native_sequence=%llu command_lists=%u waits=%u"
++                    " signals=%u fence=%u wait_stage_first=0x%X"
++                    " wait_stage_last=0x%X wait_stage_or=0x%X\n",
++                    static_cast<uint32_t>(res),
++                    static_cast<unsigned long long>(
++                        submissionFailureOccurrence),
++                    static_cast<uint32_t>(type), familyIndex, queueIndex,
++                    virtualQueueCount,
++                    static_cast<unsigned long long>(
++                        lastSuccessfulSubmissionSequence),
++                    commandListCount, waitSemaphoreCount,
++                    signalSemaphoreCount,
++                    submitFence != VK_NULL_HANDLE ? 1U : 0U,
++                    firstWaitStage, lastWaitStage, waitStageOr);
++            }
++            return 0;
++        }
++        return nativeSubmissionSequence;
++    }
++
++    RenderCommandFenceStatus VulkanCommandQueue::queryCommandFenceStatus(
++        RenderCommandFence *fence) {
++        assert(fence != nullptr);
++
++        VulkanCommandFence *interfaceFence =
++            static_cast<VulkanCommandFence *>(fence);
++        const VkResult res = vkGetFenceStatus(device->vk, interfaceFence->vk);
++        if (res == VK_SUCCESS) {
++            return RenderCommandFenceStatus::Ready;
++        }
++        if (res == VK_NOT_READY) {
++            return RenderCommandFenceStatus::Pending;
+@@ -3631,0 +3902,3 @@ namespace plume {
++        std::fprintf(
++            stderr, "vkGetFenceStatus failed with error code 0x%X.\n", res);
++        return RenderCommandFenceStatus::Unknown;
+@@ -3633 +3906 @@ namespace plume {
+-    
++
+@@ -3647,2 +3919,0 @@ namespace plume {
+-    // VulkanPool
+-
+@@ -3703,2 +3973,0 @@ namespace plume {
+-    
+-    // VulkanQueueFamily
+@@ -3709 +3977,0 @@ namespace plume {
+-        // Insert virtual queue into the queue with the least amount of virtual queues.
+@@ -3735,2 +4002,0 @@ namespace plume {
+-    // VulkanDevice
+-    
+@@ -3748 +4014 @@ namespace plume {
+-        
++
+@@ -3754,5 +4020,5 @@ namespace plume {
+-            0,  // VK_PHYSICAL_DEVICE_TYPE_OTHER
+-            3,  // VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+-            4,  // VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+-            2,  // VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU
+-            1   // VK_PHYSICAL_DEVICE_TYPE_CPU
++            0,
++            3,
++            4,
++            2,
++            1
+@@ -3794 +4059,0 @@ namespace plume {
+-        // Check for extensions.
+@@ -3819 +4084 @@ namespace plume {
+-        
++
+@@ -3829 +4093,0 @@ namespace plume {
+-        // Store properties.
+@@ -3832 +4095,0 @@ namespace plume {
+-        // Check for supported features.
+@@ -3904 +4166,0 @@ namespace plume {
+-        // Check for properties.
+@@ -3924 +4185,0 @@ namespace plume {
+-        // Build the device creation chain.
+@@ -3967 +4228 @@ namespace plume {
+-        
++
+@@ -3973 +4233,0 @@ namespace plume {
+-        // Retrieve the information for the queue families.
+@@ -3989 +4248,0 @@ namespace plume {
+-                // The family queue flags must contain all the flags required by the command list type.
+@@ -3994,2 +4252,0 @@ namespace plume {
+-                // Prefer picking the queues with the least amount of bits set that match the mask we're looking for.
+-                // If the queue families have matching capabilities but one is already used, prefer the unused one.
+@@ -4010 +4266,0 @@ namespace plume {
+-        // Pick the family queues for each type of command list.
+@@ -4015 +4270,0 @@ namespace plume {
+-        // Create the struct to store the virtual queues.
+@@ -4018 +4272,0 @@ namespace plume {
+-        // Create the logical device with the desired family queues.
+@@ -4033,0 +4288,4 @@ namespace plume {
++        profileCalibrationExtension = supportedOptionalExtensions.count(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) ? 1 : 0;
++#if defined(VK_KHR_calibrated_timestamps)
++        if (supportedOptionalExtensions.count(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) profileCalibrationExtension = 2;
++#endif
+@@ -4057,0 +4316,9 @@ namespace plume {
++        VkPipelineCacheCreateInfo pipelineCacheInfo = {};
++        pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++        res = vkCreatePipelineCache(vk, &pipelineCacheInfo, nullptr, &pipelineCache);
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "vkCreatePipelineCache failed with error code 0x%X.\n", res);
++            release();
++            return;
++        }
++
+@@ -4100 +4366,0 @@ namespace plume {
+-        // Find the biggest device local memory available on the device.
+@@ -4119 +4384,0 @@ namespace plume {
+-        // Fill description.
+@@ -4122 +4386,0 @@ namespace plume {
+-        // Fill capabilities.
+@@ -4135,0 +4400 @@ namespace plume {
++        capabilities.unalignedBlockCompressedTextures = true;
+@@ -4143,3 +4408 @@ namespace plume {
+-        // MoltenVK supports triangle fans but does so via compute shaders to translate to lists, since it has to
+-        // support all cases including indirect draw. This results in renderpass restarts that can harm performance,
+-        // so force disable native triangle fan support and rely on the game to emulate fans if needed.
++
+@@ -4151 +4413,0 @@ namespace plume {
+-        // Fill Vulkan-only capabilities.
+@@ -4159,0 +4422 @@ namespace plume {
++        dumpVulkanSubmissionPhase();
+@@ -4306 +4568,0 @@ namespace plume {
+-        // Build the instance data to be uploaded.
+@@ -4327 +4588,0 @@ namespace plume {
+-        // Retrieve the size the TLAS will require.
+@@ -4353 +4614 @@ namespace plume {
+-    
++
+@@ -4371 +4632 @@ namespace plume {
+-        
++
+@@ -4431,0 +4693,44 @@ namespace plume {
++    void VulkanDevice::setPipelineCachePath(const std::filesystem::path &path) {
++        constexpr uintmax_t MaxPipelineCacheBytes = 64U * 1024U * 1024U;
++        std::lock_guard lock(pipelineCacheMutex);
++        pipelineCachePath = path;
++
++        std::vector<uint8_t> cacheData;
++        std::error_code error;
++        const uintmax_t fileSize = std::filesystem::file_size(path, error);
++        if (!error && fileSize > 0 && fileSize <= MaxPipelineCacheBytes) {
++            std::ifstream stream(path, std::ios::binary);
++            cacheData.resize(static_cast<size_t>(fileSize));
++            if (!stream.read(reinterpret_cast<char *>(cacheData.data()),
++                    static_cast<std::streamsize>(cacheData.size()))) {
++                cacheData.clear();
++                fprintf(stderr, "Ignoring unreadable Vulkan pipeline cache.\n");
++            }
++        }
++        else if (!error && fileSize > MaxPipelineCacheBytes) {
++            fprintf(stderr, "Ignoring oversized Vulkan pipeline cache.\n");
++        }
++
++        VkPipelineCacheCreateInfo createInfo = {};
++        createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++        createInfo.initialDataSize = cacheData.size();
++        createInfo.pInitialData = cacheData.empty() ? nullptr : cacheData.data();
++        VkPipelineCache replacement = VK_NULL_HANDLE;
++        VkResult res = vkCreatePipelineCache(vk, &createInfo, nullptr, &replacement);
++        if (res != VK_SUCCESS && !cacheData.empty()) {
++            fprintf(stderr, "Ignoring incompatible Vulkan pipeline cache (0x%X).\n", res);
++            createInfo.initialDataSize = 0;
++            createInfo.pInitialData = nullptr;
++            res = vkCreatePipelineCache(vk, &createInfo, nullptr, &replacement);
++        }
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "Unable to configure Vulkan pipeline cache (0x%X).\n", res);
++            return;
++        }
++
++        if (pipelineCache != VK_NULL_HANDLE) {
++            vkDestroyPipelineCache(vk, pipelineCache, nullptr);
++        }
++        pipelineCache = replacement;
++    }
++
+@@ -4433 +4738,57 @@ namespace plume {
+-        nullBuffer = nullptr; // force destruction before destroying allocator
++        nullBuffer = nullptr;
++
++        {
++            std::lock_guard lock(pipelineCacheMutex);
++            if (vk != VK_NULL_HANDLE && pipelineCache != VK_NULL_HANDLE) {
++                if (!pipelineCachePath.empty()) {
++                    size_t cacheSize = 0;
++                    VkResult res = vkGetPipelineCacheData(
++                        vk, pipelineCache, &cacheSize, nullptr);
++                    constexpr size_t MaxPipelineCacheBytes =
++                        64U * 1024U * 1024U;
++                    if (res == VK_SUCCESS && cacheSize > 0 &&
++                        cacheSize <= MaxPipelineCacheBytes) {
++                        std::vector<uint8_t> cacheData(cacheSize);
++                        res = vkGetPipelineCacheData(
++                            vk, pipelineCache, &cacheSize, cacheData.data());
++                        if (res == VK_SUCCESS) {
++                            cacheData.resize(cacheSize);
++
++                            auto temporary = pipelineCachePath;
++                            temporary += ".tmp";
++                            std::ofstream stream(
++                                temporary,
++                                std::ios::binary | std::ios::trunc);
++                            stream.write(
++                                reinterpret_cast<const char *>(cacheData.data()),
++                                static_cast<std::streamsize>(cacheData.size()));
++                            stream.flush();
++                            const bool written = stream.good();
++                            stream.close();
++                            if (written) {
++#if defined(_WIN32)
++                                if (!MoveFileExW(
++                                        temporary.c_str(),
++                                        pipelineCachePath.c_str(),
++                                        MOVEFILE_REPLACE_EXISTING |
++                                            MOVEFILE_WRITE_THROUGH)) {
++                                    std::filesystem::remove(temporary);
++                                }
++#else
++                                if (std::rename(
++                                        temporary.c_str(),
++                                        pipelineCachePath.c_str()) != 0) {
++                                    std::filesystem::remove(temporary);
++                                }
++#endif
++                            }
++                            else {
++                                std::filesystem::remove(temporary);
++                            }
++                        }
++                    }
++                }
++                vkDestroyPipelineCache(vk, pipelineCache, nullptr);
++                pipelineCache = VK_NULL_HANDLE;
++            }
++        }
+@@ -4460,2 +4820,0 @@ namespace plume {
+-    // VulkanInterface
+-
+@@ -4490 +4848,0 @@ namespace plume {
+-        // Check for extensions.
+@@ -4504,3 +4862 @@ namespace plume {
+-        // Push the extensions specified by SDL as required.
+-        // SDL2 has this awkward requirement for the window to pull the extensions from. 
+-        // This can be removed when upgrading to SDL3.
++
+@@ -4558 +4914 @@ namespace plume {
+-        // Search for validation layer and enabled it.
++
+@@ -4564 +4920 @@ namespace plume {
+-        
++
+@@ -4575 +4931 @@ namespace plume {
+-        
++
+@@ -4584 +4939,0 @@ namespace plume {
+-        // Fill capabilities.
+@@ -4587 +4941,0 @@ namespace plume {
+-        // Fill device names.
+@@ -4628,2 +4981,0 @@ namespace plume {
+-    // Global creation function.
+-
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 0a1edbe..5a6aae5 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -1,3 +0,0 @@
+-//
+-// plume
+-//
+@@ -6 +2,0 @@
+-//
+@@ -28 +23,0 @@
+-// For VK_KHR_portability_subset
+@@ -243,0 +239 @@ namespace plume {
++        bool textureCopySourceSupported = false;
+@@ -254,0 +251 @@ namespace plume {
++        bool supportsTextureCopySource() const override;
+@@ -291 +288,2 @@ namespace plume {
+-        virtual void queryResults() override;
++        virtual void queryResults(
++            uint32_t firstQuery, uint32_t queryCount) override;
+@@ -375,0 +374,3 @@ namespace plume {
++        bool getProfileClockCalibration(ProfileClockCalibration &sample) override;
++        bool sharesNativeQueue(
++            const RenderCommandQueue *other) const override;
+@@ -378 +379,3 @@ namespace plume {
+-        void executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        uint64_t executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, const RenderBarrierStages *waitSemaphoreStages, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
++        RenderCommandFenceStatus queryCommandFenceStatus(
++            RenderCommandFence *fence) override;
+@@ -391 +394 @@ namespace plume {
+-    
++
+@@ -394,0 +398,3 @@ namespace plume {
++        uint64_t submissionSequence = 0;
++
++        uint64_t submissionFailureCount = 0;
+@@ -405,0 +412 @@ namespace plume {
++        uint32_t profileCalibrationExtension = 0;
+@@ -409,0 +417,3 @@ namespace plume {
++        VkPipelineCache pipelineCache = VK_NULL_HANDLE;
++        std::filesystem::path pipelineCachePath;
++        std::mutex pipelineCacheMutex;
+@@ -444,0 +455 @@ namespace plume {
++        void setPipelineCachePath(const std::filesystem::path &path) override;

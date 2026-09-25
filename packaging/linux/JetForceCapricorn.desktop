@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Jet Force Capricorn
+Comment=Native static recompilation of Jet Force Gemini
+Exec=JetForceCapricorn
+Icon=JetForceCapricorn
+Categories=Game;
+Terminal=false

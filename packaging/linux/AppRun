@@ -1,0 +1,69 @@
+#!/bin/sh
+set -u
+if [ -z "${APPDIR:-}" ]; then
+    APPDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
+    export APPDIR
+fi
+launch_dir=$(pwd -P) || exit 1
+if [ "$#" -eq 1 ]; then
+    case "$1" in
+        /*|--*) ;;
+        *) set -- "$launch_dir/$1" ;;
+    esac
+fi
+if [ -n "${APPIMAGE:-}" ]; then
+    launch_dir=$(CDPATH= cd -- "$(dirname -- "$APPIMAGE")" && pwd -P) || exit 1
+fi
+log_path="$launch_dir/JetForceCapricorn.log"
+if ! : >"$log_path"; then
+    printf 'Cannot write launch log: %s\n' "$log_path" >&2
+    exit 1
+fi
+(
+    cd "$APPDIR/usr/bin" || exit 1
+    core="$APPDIR/usr/lib/glibc"
+    IFS= read -r bundled_version < "$core/version" || exit 1
+    host_version=$(LD_LIBRARY_PATH= LD_PRELOAD= LD_AUDIT= getconf GNU_LIBC_VERSION 2>/dev/null) || host_version=''
+    host_version=${host_version#glibc }
+    host_major=${host_version%%.*}
+    host_minor=${host_version#*.}
+    bundle_major=${bundled_version%%.*}
+    bundle_minor=${bundled_version#*.}
+    use_host=0
+    case "$host_major:$host_minor" in
+        *[!0-9:]*|:*|*:) ;;
+        *) if [ "$host_major" -gt "$bundle_major" ] ||
+              { [ "$host_major" -eq "$bundle_major" ] && [ "$host_minor" -ge "$bundle_minor" ]; }; then
+               use_host=1
+           fi ;;
+    esac
+    loader="$core/ld-linux-x86-64.so.2"
+    library_path="$APPDIR/usr/lib/app"
+    if [ "$use_host" -eq 1 ]; then
+        loader=/lib64/ld-linux-x86-64.so.2
+        if [ ! -x "$loader" ]; then
+            printf 'Missing host x86-64 glibc loader: %s\n' "$loader" >&2
+            exit 1
+        fi
+    else
+        library_path="$library_path:$core"
+        export GCONV_PATH="$core/gconv"
+    fi
+    if ! probe_error=$(LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 \
+        "$loader" --library-path "$library_path" ./JetForceCapricorn 2>&1 >/dev/null) ||
+       [ -n "$probe_error" ]; then
+        library_path="$library_path:$APPDIR/usr/lib/compiler"
+    fi
+    if ! probe_error=$(LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 \
+        "$loader" --library-path "$library_path" ./JetForceCapricorn 2>&1 >/dev/null) ||
+       [ -n "$probe_error" ]; then
+        printf 'Packaged runtime cannot load the game: %s\n' "$probe_error" >&2
+        exit 1
+    fi
+    exec "$loader" --library-path "$library_path" ./JetForceCapricorn "$@"
+) >>"$log_path" 2>&1
+status=$?
+if [ "$status" -ne 0 ] && command -v kdialog >/dev/null 2>&1; then
+    kdialog --error "Jet Force Capricorn closed unexpectedly (exit status $status). Details were written to $log_path"
+fi
+exit "$status"

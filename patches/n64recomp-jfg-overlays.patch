@@ -1,0 +1,1519 @@
+diff --git a/RSPRecomp/src/rsp_recomp.cpp b/RSPRecomp/src/rsp_recomp.cpp
+index 518477d..d4976c2 100644
+--- a/RSPRecomp/src/rsp_recomp.cpp
++++ b/RSPRecomp/src/rsp_recomp.cpp
+@@ -1,0 +2 @@
++#include <algorithm>
+@@ -20 +20,0 @@ constexpr uint32_t rsp_mem_mask = 0x1FFF;
+-// Can't use rabbitizer's operand types because we need to be able to provide a register reference or a register index
+@@ -35 +35 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // Vt, Rs, Imm
++
+@@ -46 +46 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // { InstrId::rsp_lwv, {RspOperand::Vt, RspOperand::Rs, RspOperand::Imm7}}, // Not in rabbitizer
++
+@@ -61 +60,0 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // Vd, Vs, Vt
+@@ -96 +95 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // { InstrId::rsp_vzero,   {RspOperand::Vd, RspOperand::Vs, RspOperand::Vt}}, unused pseudo
++
+@@ -100 +98,0 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // Vd, De, Vt
+@@ -109 +106,0 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // Rt, Vs
+@@ -113 +109,0 @@ std::unordered_map<InstrId, std::array<RspOperand, 3>> vector_operands{
+-    // Nop
+@@ -127 +123 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+-        return 0; // None of the flags in RSP status are set
++        return 0;
+@@ -129 +125 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+-        return 0; // Pretend DMAs complete instantly
++        return 0;
+@@ -131 +127 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+-        return 0; // Pretend DMAs complete instantly
++        return 0;
+@@ -133 +129 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+-        return 0; // Always acquire the semaphore
++        return 0;
+@@ -135 +131 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+-        return 0; // Good enough for the microcodes that would be recompiled (i.e. non-graphics ones)
++        return 0;
+@@ -146 +142 @@ std::string_view c0_reg_write_action(int cop0_reg) {
+-        return ""; // Ignore semaphore functionality
++        return "";
+@@ -148 +144 @@ std::string_view c0_reg_write_action(int cop0_reg) {
+-        return ""; // Ignore writes to the status flags since yielding is ignored
++        return "";
+@@ -231 +226,0 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // Skip labels if we're duplicating an instruction into a delay slot
+@@ -233 +228 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-        // Print a label if one exists here
++
+@@ -241 +235,0 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // Output a comment with the original instruction
+@@ -290 +283,0 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // Replace unsupported instructions with early returns
+@@ -315 +307,0 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // If this instruction is in the vector operand table then emit the appropriate function call for its implementation
+@@ -350 +342 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-                    // Sign extend the 7-bit immediate
++
+@@ -357 +349 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-        // Trim the trailing comma off the operands
++
+@@ -373 +365 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // Otherwise, implement the instruction directly
++
+@@ -379 +371 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-            // Arithmetic
++
+@@ -391 +383 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-        case InstrId::rsp_negu: // pseudo instruction for subu x, 0, y
++        case InstrId::rsp_negu:
+@@ -455,2 +447 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-            // Loads
+-            // TODO ld
++
+@@ -472 +463 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-            // Stores
++
+@@ -482 +473 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-            // Branches
++
+@@ -541,2 +532,2 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-                    // DMA read, do overlay swap if reading into IMEM
+-                    fmt::print(output_file, 
++
++                    fmt::print(output_file,
+@@ -562 +552,0 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+-    // Write overlay swap resume labels
+@@ -580 +570,3 @@ void write_indirect_jumps(std::ofstream& output_file, const BranchTargets& branc
+-    for (uint32_t branch_target: branch_targets.indirect_targets) {
++    std::vector<uint32_t> indirect_targets{branch_targets.indirect_targets.begin(), branch_targets.indirect_targets.end()};
++    std::sort(indirect_targets.begin(), indirect_targets.end());
++    for (uint32_t branch_target: indirect_targets) {
+@@ -652 +643,0 @@ std::vector<T> toml_to_vec(const toml::array* array) {
+-    // Reserve room for all the funcs in the map.
+@@ -731 +721,0 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-        // Extra indirect branch targets (optional)
+@@ -738 +727,0 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-        // Unsupported_instructions (optional)
+@@ -745 +733,0 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-        // Overlay slots (optional)
+@@ -760 +748 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                        fmt::format("Missing text_address in config file at overlay slot {}", slot_idx).c_str(), 
++                        fmt::format("Missing text_address in config file at overlay slot {}", slot_idx).c_str(),
+@@ -764 +751,0 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                // Overlays per slot
+@@ -772 +759 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                        
++
+@@ -779 +766 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                                fmt::format("Missing offset in config file at overlay slot {} overlay {}", slot_idx, overlay_idx).c_str(), 
++                                fmt::format("Missing offset in config file at overlay slot {} overlay {}", slot_idx, overlay_idx).c_str(),
+@@ -789 +776 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                                    fmt::format("Overlay size must be a multiple of {} in config file at overlay slot {} overlay {}", sizeof(uint32_t), slot_idx, overlay_idx).c_str(), 
++                                    fmt::format("Overlay size must be a multiple of {} in config file at overlay slot {} overlay {}", sizeof(uint32_t), slot_idx, overlay_idx).c_str(),
+@@ -795 +782 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                                fmt::format("Missing size in config file at overlay slot {} overlay {}", slot_idx, overlay_idx).c_str(), 
++                                fmt::format("Missing size in config file at overlay slot {} overlay {}", slot_idx, overlay_idx).c_str(),
+@@ -805 +792 @@ bool read_config(const std::filesystem::path& config_path, RSPRecompilerConfig&
+-                        fmt::format("Missing overlays in config file at overlay slot {}", slot_idx).c_str(), 
++                        fmt::format("Missing overlays in config file at overlay slot {}", slot_idx).c_str(),
+@@ -903,2 +890,2 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    // Includes and permutation protos
+-    fmt::print(output_file, 
++
++    fmt::print(output_file,
+@@ -917,2 +904 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    // IMEM -> slot index mapping
+-    fmt::print(output_file, 
++    fmt::print(output_file,
+@@ -929,2 +915 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    // ucode offset -> overlay index mapping (per slot)
+-    fmt::print(output_file, 
++    fmt::print(output_file,
+@@ -944,2 +929 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    // Permutation function pointers
+-    fmt::print(output_file, 
++    fmt::print(output_file,
+@@ -953 +936,0 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    // Main function
+@@ -958 +941 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    
++
+@@ -973 +956 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    
++
+@@ -989 +972 @@ void create_overlay_swap_function(const std::string& function_name, std::ofstrea
+-    
++
+@@ -1005 +988 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Collect indirect jump targets (return addresses for linked jumps)
++
+@@ -1008 +990,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Add any additional indirect branch targets that may not be found directly in the code (e.g. from a jump table)
+@@ -1012,2 +994 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    
+-    // Write function
++
+@@ -1025 +1005,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-        // Write jumps to resume targets
+@@ -1030 +1010 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-            
++
+@@ -1032 +1012 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-                fmt::print(output_file, "            case 0x{0:04X}: goto R_{0:04X}_delay;\n", 
++                fmt::print(output_file, "            case 0x{0:04X}: goto R_{0:04X}_delay;\n",
+@@ -1035 +1015 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-            
++
+@@ -1040 +1020 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-            
++
+@@ -1042 +1022 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-                fmt::print(output_file, "            case 0x{0:04X}: goto R_{0:04X};\n", 
++                fmt::print(output_file, "            case 0x{0:04X}: goto R_{0:04X};\n",
+@@ -1067 +1047 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Write each instruction
++
+@@ -1072 +1051,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Terminate instruction code with a return to indicate that the microcode has run past its end
+@@ -1075 +1053,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Write the section containing the indirect jump table
+@@ -1078 +1055,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // Write routine for returning for an overlay swap
+@@ -1083 +1059,0 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+-    // End the file
+@@ -1131 +1106,0 @@ int main(int argc, const char** argv) {
+-    // Create overlay permutations
+@@ -1137 +1111,0 @@ int main(int argc, const char** argv) {
+-    // Disable appropriate pseudo instructions
+@@ -1143 +1116,0 @@ int main(int argc, const char** argv) {
+-    // Decode the instruction words into instructions
+@@ -1149 +1122 @@ int main(int argc, const char** argv) {
+-        vram += instr_size;
++        vram = ((vram + instr_size) | 0x1000) & rsp_mem_mask;
+@@ -1163 +1136 @@ int main(int argc, const char** argv) {
+-            vram += instr_size;
++            vram = ((vram + instr_size) | 0x1000) & rsp_mem_mask;
+@@ -1169 +1141,0 @@ int main(int argc, const char** argv) {
+-    // Determine all possible overlay swap resume targets
+@@ -1175 +1146,0 @@ int main(int argc, const char** argv) {
+-    // Open output file and write beginning
+@@ -1181,2 +1152 @@ int main(int argc, const char** argv) {
+-    
+-    // Write function(s)
++
+@@ -1190 +1160 @@ int main(int argc, const char** argv) {
+-            create_function(config.output_function_name + make_permutation_string(permutation.permutation), 
++            create_function(config.output_function_name + make_permutation_string(permutation.permutation),
+diff --git a/include/recomp.h b/include/recomp.h
+index 73f3e73..0bca41b 100644
+--- a/include/recomp.h
++++ b/include/recomp.h
+@@ -10 +9,0 @@
+-// Compiler definition to disable inter-procedural optimization, allowing multiple functions to be in a single file without breaking interposition.
+@@ -12 +11 @@
+-    // MSVC's __declspec(noinline) seems to disable inter-procedural optimization entirely, so it's all that's needed.
++
+@@ -14,2 +13 @@
+-    
+-    // Use MSVC's fenv_access pragma.
++
+@@ -18,4 +16 @@
+-    // Clang has no dedicated IPO attribute, so we use a combination of other attributes to give the desired behavior.
+-    // The inline keyword allows multiple definitions during linking, and extern forces clang to emit an externally visible definition.
+-    // Weak forces Clang to not perform any IPO as the symbol can be interposed, which prevents actual inlining due to the inline keyword.
+-    // Add noinline on for good measure, which doesn't conflict with the inline keyword as they have different meanings.
++
+@@ -24 +18,0 @@
+-    // Use the standard STDC FENV_ACCESS pragma.
+@@ -27,3 +21 @@
+-    // Use GCC's attribute for disabling inter-procedural optimizations. Also enable the rounding-math compiler flag to disable
+-    // constant folding so that arithmetic respects the floating point environment. This is needed because gcc doesn't implement
+-    // any FENV_ACCESS pragma.
++
+@@ -32 +23,0 @@
+-    // There's no FENV_ACCESS pragma in gcc, so this can be empty.
+@@ -38 +28,0 @@
+-// Implementation of 64-bit multiply and divide instructions
+@@ -94,0 +85,3 @@ typedef uint64_t gpr;
++#define RDRAM_OFFSET(offset, reg) \
++    ((uint32_t)((reg) + (offset)) & 0x1FFFFFFFU)
++
+@@ -96 +89 @@ typedef uint64_t gpr;
+-    (*(int32_t*)(rdram + ((((reg) + (offset))) - 0xFFFFFFFF80000000)))
++    (*(int32_t*)(rdram + RDRAM_OFFSET(offset, reg)))
+@@ -99 +92 @@ typedef uint64_t gpr;
+-    (*(int16_t*)(rdram + ((((reg) + (offset)) ^ 2) - 0xFFFFFFFF80000000)))
++    (*(int16_t*)(rdram + (RDRAM_OFFSET(offset, reg) ^ 2)))
+@@ -102 +95 @@ typedef uint64_t gpr;
+-    (*(int8_t*)(rdram + ((((reg) + (offset)) ^ 3) - 0xFFFFFFFF80000000)))
++    (*(int8_t*)(rdram + (RDRAM_OFFSET(offset, reg) ^ 3)))
+@@ -105 +98 @@ typedef uint64_t gpr;
+-    (*(uint16_t*)(rdram + ((((reg) + (offset)) ^ 2) - 0xFFFFFFFF80000000)))
++    (*(uint16_t*)(rdram + (RDRAM_OFFSET(offset, reg) ^ 2)))
+@@ -108 +101 @@ typedef uint64_t gpr;
+-    (*(uint8_t*)(rdram + ((((reg) + (offset)) ^ 3) - 0xFFFFFFFF80000000)))
++    (*(uint8_t*)(rdram + (RDRAM_OFFSET(offset, reg) ^ 3)))
+@@ -111,2 +104,2 @@ typedef uint64_t gpr;
+-    *(uint32_t*)(rdram + ((((reg) + (offset) + 4)) - 0xFFFFFFFF80000000)) = (uint32_t)((gpr)(val) >> 0); \
+-    *(uint32_t*)(rdram + ((((reg) + (offset) + 0)) - 0xFFFFFFFF80000000)) = (uint32_t)((gpr)(val) >> 32); \
++    *(uint32_t*)(rdram + RDRAM_OFFSET((offset) + 4, reg)) = (uint32_t)((gpr)(val) >> 0); \
++    *(uint32_t*)(rdram + RDRAM_OFFSET((offset) + 0, reg)) = (uint32_t)((gpr)(val) >> 32); \
+@@ -127 +120 @@ static inline gpr do_lwl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Calculate the overall address
++
+@@ -130 +122,0 @@ static inline gpr do_lwl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Load the aligned word
+@@ -134 +125,0 @@ static inline gpr do_lwl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Mask the existing value and shift the loaded value appropriately
+@@ -139 +129,0 @@ static inline gpr do_lwl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Cast to int32_t to sign extend first
+@@ -144 +134 @@ static inline gpr do_lwr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Calculate the overall address
++
+@@ -146,2 +136 @@ static inline gpr do_lwr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    
+-    // Load the aligned word
++
+@@ -151 +139,0 @@ static inline gpr do_lwr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Mask the existing value and shift the loaded value appropriately
+@@ -156 +143,0 @@ static inline gpr do_lwr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Cast to int32_t to sign extend first
+@@ -161 +148 @@ static inline void do_swl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Calculate the overall address
++
+@@ -164 +150,0 @@ static inline void do_swl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Get the initial value of the aligned word
+@@ -168 +153,0 @@ static inline void do_swl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Mask the initial value and shift the input value appropriately
+@@ -176 +161 @@ static inline void do_swr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Calculate the overall address
++
+@@ -179 +163,0 @@ static inline void do_swr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Get the initial value of the aligned word
+@@ -183 +166,0 @@ static inline void do_swr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Mask the initial value and shift the input value appropriately
+@@ -191 +174 @@ static inline gpr do_ldl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Calculate the overall address
++
+@@ -194 +176,0 @@ static inline gpr do_ldl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Load the aligned dword
+@@ -198 +179,0 @@ static inline gpr do_ldl(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Mask the existing value and shift the loaded value appropriately
+@@ -207 +188 @@ static inline gpr do_ldr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Calculate the overall address
++
+@@ -209,2 +190 @@ static inline gpr do_ldr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    
+-    // Load the aligned dword
++
+@@ -214 +193,0 @@ static inline gpr do_ldr(uint8_t* rdram, gpr initial_value, gpr offset, gpr reg)
+-    // Mask the existing value and shift the loaded value appropriately
+@@ -223 +202 @@ static inline void do_sdl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Calculate the overall address
++
+@@ -226 +204,0 @@ static inline void do_sdl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Get the initial value of the aligned dword
+@@ -230 +207,0 @@ static inline void do_sdl(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Mask the initial value and shift the input value appropriately
+@@ -244 +221 @@ static inline void do_sdr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Calculate the overall address
++
+@@ -247 +223,0 @@ static inline void do_sdr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Get the initial value of the aligned dword
+@@ -251 +226,0 @@ static inline void do_sdr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    // Mask the initial value and shift the input value appropriately
+@@ -255 +230 @@ static inline void do_sdr(uint8_t* rdram, gpr offset, gpr reg, gpr val) {
+-    
++
+@@ -267 +242 @@ static inline uint32_t get_cop1_cs() {
+-        // round to nearest value
++
+@@ -272 +247 @@ static inline uint32_t get_cop1_cs() {
+-        // round to zero (truncate)
++
+@@ -276 +251 @@ static inline uint32_t get_cop1_cs() {
+-        // round to positive infinity (ceil)
++
+@@ -280 +255 @@ static inline uint32_t get_cop1_cs() {
+-        // round to negative infinity (floor)
++
+@@ -292 +267 @@ static inline void set_cop1_cs(uint32_t val) {
+-        case 0: // round to nearest value
++        case 0:
+@@ -295 +270 @@ static inline void set_cop1_cs(uint32_t val) {
+-        case 1: // round to zero (truncate)
++        case 1:
+@@ -298 +273 @@ static inline void set_cop1_cs(uint32_t val) {
+-        case 2: // round to positive infinity (ceil)
++        case 2:
+@@ -301 +276 @@ static inline void set_cop1_cs(uint32_t val) {
+-        case 3: // round to negative infinity (floor)
++        case 3:
+@@ -310 +285 @@ static inline void set_cop1_cs(uint32_t val) {
+-    
++
+@@ -365 +340 @@ static inline int32_t do_cvt_w_s(float val) {
+-    // Rounding mode aware float to 32-bit int conversion.
++
+@@ -373 +348 @@ static inline int64_t do_cvt_l_s(float val) {
+-    // Rounding mode aware float to 64-bit int conversion.
++
+@@ -381 +356 @@ static inline int32_t do_cvt_w_d(double val) {
+-    // Rounding mode aware double to 32-bit int conversion.
++
+@@ -389 +364 @@ static inline int64_t do_cvt_l_d(double val) {
+-    // Rounding mode aware double to 64-bit int conversion.
++
+@@ -399,2 +373,0 @@ static inline int64_t do_cvt_l_d(double val) {
+-//#define NAN_CHECK(val)
+-
+@@ -429 +401,0 @@ typedef struct {
+-// Checks if the target is an even float register or that mips3 float mode is enabled
+@@ -442 +413,0 @@ void do_break(uint32_t vram);
+-// The function signature for all recompiler output functions.
+@@ -444,2 +415 @@ typedef void (recomp_func_t)(uint8_t* rdram, recomp_context* ctx);
+-// The function signature for special functions that need a third argument.
+-// These get called via generated shims to allow providing some information about the caller, such as mod id.
++
+@@ -448,0 +419 @@ recomp_func_t* get_function(int32_t vram);
++recomp_func_t* get_function_with_caller(int32_t vram, const char* caller);
+@@ -451 +422 @@ recomp_func_t* get_function(int32_t vram);
+-    get_function((int32_t)(val))
++    get_function_with_caller((int32_t)(val), __func__)
+diff --git a/include/recompiler/context.h b/include/recompiler/context.h
+index e7b4431..0758723 100644
+--- a/include/recompiler/context.h
++++ b/include/recompiler/context.h
+@@ -35,0 +36,2 @@ namespace N64Recomp {
++        std::unordered_map<int32_t, std::string> store_hooks;
++
+@@ -40 +42 @@ namespace N64Recomp {
+-    
++
+@@ -70 +72 @@ namespace N64Recomp {
+-        uint32_t symbol_index; // Only used for reference symbols and special section symbols
++        uint32_t symbol_index;
+@@ -76 +77,0 @@ namespace N64Recomp {
+-    // Special section indices.
+@@ -78 +79 @@ namespace N64Recomp {
+-    constexpr uint16_t SectionImport = (uint16_t)-3; // Imported symbols for mods
++    constexpr uint16_t SectionImport = (uint16_t)-3;
+@@ -81 +81,0 @@ namespace N64Recomp {
+-    // Special section names.
+@@ -91 +90,0 @@ namespace N64Recomp {
+-    // Special dependency names.
+@@ -99,2 +98,2 @@ namespace N64Recomp {
+-        uint32_t bss_size = 0; // not populated when using a symbol toml
+-        std::vector<uint32_t> function_addrs; // only used by the CLI (to find the size of static functions)
++        uint32_t bss_size = 0;
++        std::vector<uint32_t> function_addrs;
+@@ -105 +104 @@ namespace N64Recomp {
+-        bool relocatable = false; // TODO is this needed? relocs being non-empty should be an equivalent check.
++        bool relocatable = false;
+@@ -107,2 +106,2 @@ namespace N64Recomp {
+-        bool fixed_address = false; // Only used in mods, indicates that the section shouldn't be relocated or placed into mod memory.
+-        bool globally_loaded = false; // Only used in mods, indicates that the section's functions should be globally loaded. Does not actually load the section's contents into ram.
++        bool fixed_address = false;
++        bool globally_loaded = false;
+@@ -128 +127 @@ namespace N64Recomp {
+-        // Functions with manual size overrides
++
+@@ -130 +129 @@ namespace N64Recomp {
+-        // The section names that were specified as relocatable
++
+@@ -132 +131 @@ namespace N64Recomp {
+-        // Symbols to ignore.
++
+@@ -134 +133 @@ namespace N64Recomp {
+-        // Manual mappings of mdebug file records to elf sections.
++
+@@ -146 +145 @@ namespace N64Recomp {
+-    
++
+@@ -180 +179 @@ namespace N64Recomp {
+-        // Reference symbol section index, or one of the special section indices such as SectionImport.
++
+@@ -213,2 +212 @@ namespace N64Recomp {
+-        //// Reference symbols (used for populating relocations for patches)
+-        // A list of the sections that contain the reference symbols.
++
+@@ -216 +214 @@ namespace N64Recomp {
+-        // A list of the reference symbols.
++
+@@ -218 +216 @@ namespace N64Recomp {
+-        // Mapping of symbol name to reference symbol index.
++
+@@ -220 +218 @@ namespace N64Recomp {
+-        // Whether all reference sections should be treated as relocatable (used in live recompilation).
++
+@@ -225 +223 @@ namespace N64Recomp {
+-        // A list of the list of each function (by index in `functions`) in a given section
++
+@@ -227 +225 @@ namespace N64Recomp {
+-        // A mapping of vram address to every function with that address.
++
+@@ -229 +227 @@ namespace N64Recomp {
+-        // A mapping of bss section index to the corresponding non-bss section index.
++
+@@ -231,2 +229 @@ namespace N64Recomp {
+-        // The target ROM being recompiled, TODO move this outside of the context to avoid making a copy for mod contexts.
+-        // Used for reading relocations and for the output binary feature.
++
+@@ -234 +231 @@ namespace N64Recomp {
+-        // Whether reference symbols should be validated when emitting function calls during recompilation.
++
+@@ -236 +233 @@ namespace N64Recomp {
+-        // Whether all function calls (excluding reference symbols) should go through lookup.
++
+@@ -239,2 +235,0 @@ namespace N64Recomp {
+-        //// Only used by the CLI, TODO move this to a struct in the internal headers.
+-        // A mapping of function name to index in the functions vector
+@@ -243,4 +237,0 @@ namespace N64Recomp {
+-        //// Mod dependencies and their symbols
+-        
+-        //// Imported values
+-        // Dependency names.
+@@ -248 +239 @@ namespace N64Recomp {
+-        // Mapping of dependency name to dependency index.
++
+@@ -250 +241 @@ namespace N64Recomp {
+-        // List of symbols imported from dependencies.
++
+@@ -252 +243 @@ namespace N64Recomp {
+-        // List of events imported from dependencies.
++
+@@ -254 +245 @@ namespace N64Recomp {
+-        // Mappings of dependency event name to the index in dependency_events, all indexed by dependency.
++
+@@ -256 +247 @@ namespace N64Recomp {
+-        // Mappings of dependency import name to index in import_symbols, all indexed by dependency.
++
+@@ -259,2 +249,0 @@ namespace N64Recomp {
+-        //// Exported values
+-        // List of function replacements, which contains the original function to replace and the function index to replace it with.
+@@ -262 +251 @@ namespace N64Recomp {
+-        // Indices of every exported function.
++
+@@ -264 +253 @@ namespace N64Recomp {
+-        // List of callbacks, which contains the function for the callback and the dependency event it attaches to.
++
+@@ -266 +255 @@ namespace N64Recomp {
+-        // List of symbols from events, which contains the names of events that this context provides.
++
+@@ -268 +257 @@ namespace N64Recomp {
+-        // List of hooks, which contains the original function to hook and the function index to call at the hook.
++
+@@ -271 +259,0 @@ namespace N64Recomp {
+-        // Causes functions to print their name to the console the first time they're called.
+@@ -274 +261,0 @@ namespace N64Recomp {
+-        // Imports sections and function symbols from a provided context into this context's reference sections and reference functions.
+@@ -276 +263 @@ namespace N64Recomp {
+-        // Reads a data symbol file and adds its contents into this context's reference data symbols.
++
+@@ -302 +288,0 @@ namespace N64Recomp {
+-            // Check if any of the dependencies already exist and fail if so.
+@@ -326 +312 @@ namespace N64Recomp {
+-                // Handle special dependency names.
++
+@@ -364 +349,0 @@ namespace N64Recomp {
+-            // Check if the symbol was found.
+@@ -384 +368,0 @@ namespace N64Recomp {
+-            // Ignore reference symbols in special sections.
+@@ -437 +421 @@ namespace N64Recomp {
+-            // Invalid section index.
++
+@@ -442 +425,0 @@ namespace N64Recomp {
+-            // TODO Check if reference_symbols_by_name already contains the name and show a conflict error if so.
+@@ -458 +441 @@ namespace N64Recomp {
+-            // TODO Check if dependency_imports_by_name[dependency_index] already contains the name and show a conflict error if so.
++
+@@ -489 +472 @@ namespace N64Recomp {
+-            // TODO Check if reference_symbols_by_name already contains the name and show a conflict error if so.
++
+@@ -512 +494,0 @@ namespace N64Recomp {
+-            // Ignore reference symbols that aren't in the event section.
+@@ -526,2 +507,0 @@ namespace N64Recomp {
+-            // Prevent adding the same event to a dependency twice. This isn't an error, since a mod could register
+-            // multiple callbacks to the same event.
+@@ -606 +586 @@ namespace N64Recomp {
+-    
++
+@@ -608,2 +588 @@ namespace N64Recomp {
+-        // Zero-sized symbols between 0x8F000000 and 0x90000000 are manually specified symbols for use with patches.
+-        // TODO make this configurable or come up with a more sensible solution for dealing with manual symbols for patches.
++
+@@ -613 +591,0 @@ namespace N64Recomp {
+-    // Locale-independent ASCII-only version of isalpha.
+@@ -617,2 +595 @@ namespace N64Recomp {
+-    
+-    // Locale-independent ASCII-only version of isalnum.
++
+@@ -624 +601 @@ namespace N64Recomp {
+-        // Disallow empty ids.
++
+@@ -629 +605,0 @@ namespace N64Recomp {
+-        // Allow special dependency ids.
+@@ -634,4 +609,0 @@ namespace N64Recomp {
+-        // These following rules basically describe C identifiers. There's no specific reason to enforce them besides colon (currently),
+-        // so this is just to prevent "weird" mod ids.
+-
+-        // Check the first character, which must be alphabetical or an underscore.
+@@ -642 +613,0 @@ namespace N64Recomp {
+-        // Check the remaining characters, which can be alphanumeric or underscore.
+diff --git a/include/recompiler/generator.h b/include/recompiler/generator.h
+index 145bcd0..4324238 100644
+--- a/include/recompiler/generator.h
++++ b/include/recompiler/generator.h
+@@ -37,2 +37 @@ namespace N64Recomp {
+-        // target_section_offset can each be deduced from symbol_index if the full context is available,
+-        // but for live recompilation the reference symbol list is unavailable so it's still provided.
++
+@@ -77,0 +77 @@ namespace N64Recomp {
++        void emit_overlay_function_call(const Context& context, size_t function_index, uint16_t caller_section, uint32_t return_offset) const;
+diff --git a/src/cgenerator.cpp b/src/cgenerator.cpp
+index 94f85c5..efa27b4 100644
+--- a/src/cgenerator.cpp
++++ b/src/cgenerator.cpp
+@@ -19 +19 @@ static std::vector<BinaryOpFields> c_op_fields = []() {
+-        // Prevent setting up an operation twice.
++
+@@ -45,2 +45,2 @@ static std::vector<BinaryOpFields> c_op_fields = []() {
+-    setup_op(N64Recomp::BinaryOpType::Sra32,     "S32",    ">>"); // Arithmetic aspect will be taken care of by unary op for first operand.
+-    setup_op(N64Recomp::BinaryOpType::Sra64,     "",       ">>"); // Arithmetic aspect will be taken care of by unary op for first operand.
++    setup_op(N64Recomp::BinaryOpType::Sra32,     "S32",    ">>");
++    setup_op(N64Recomp::BinaryOpType::Sra64,     "",       ">>");
+@@ -73 +72,0 @@ static std::vector<BinaryOpFields> c_op_fields = []() {
+-    // Ensure every operation has been setup.
+@@ -221 +220 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            operand_string = "S32(" + operand_string + ")"; 
++            operand_string = "S32(" + operand_string + ")";
+@@ -224 +223 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            operand_string = "U32(" + operand_string + ")"; 
++            operand_string = "U32(" + operand_string + ")";
+@@ -227 +226 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            operand_string = "SIGNED(" + operand_string + ")"; 
++            operand_string = "SIGNED(" + operand_string + ")";
+@@ -230 +229 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            // Nothing to do here, they're already U64
++
+@@ -233 +232 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            operand_string = "S32(" + operand_string + " << 16)"; 
++            operand_string = "S32(" + operand_string + " << 16)";
+@@ -242 +241 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-            operand_string = "(int32_t)" + operand_string; 
++            operand_string = "(int32_t)" + operand_string;
+@@ -304 +303 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
+-        // TODO these four operations should use banker's rounding, but roundeven is C23 so it's unavailable here.
++
+@@ -357,2 +356 @@ void N64Recomp::CGenerator::get_binary_expr_string(BinaryOpType type, const Bina
+-    
+-    // These cases aren't strictly necessary and are just here for parity with the old recompiler output.
++
+@@ -368 +365,0 @@ void N64Recomp::CGenerator::get_binary_expr_string(BinaryOpType type, const Bina
+-    // End unnecessary cases.
+@@ -370 +366,0 @@ void N64Recomp::CGenerator::get_binary_expr_string(BinaryOpType type, const Bina
+-    // TODO encode these ops to avoid needing special handling.
+@@ -384 +380 @@ void N64Recomp::CGenerator::get_binary_expr_string(BinaryOpType type, const Bina
+-        // Handle special cases
++
+@@ -399 +395 @@ void N64Recomp::CGenerator::emit_function_start(const std::string& function_name
+-        // these variables shouldn't need to be preserved across function boundaries, so make them local for more efficient output
++
+@@ -401 +397 @@ void N64Recomp::CGenerator::emit_function_start(const std::string& function_name
+-        "    int c1cs = 0;\n", // cop1 conditional signal
++        "    int c1cs = 0;\n",
+@@ -426,0 +423,13 @@ void N64Recomp::CGenerator::emit_function_call(const Context& context, size_t fu
++void N64Recomp::CGenerator::emit_overlay_function_call(const Context& context, size_t function_index, uint16_t caller_section, uint32_t return_offset) const {
++    const Function& target = context.functions[function_index];
++    const Section& target_section = context.sections[target.section_index];
++    fmt::print(output_file,
++        "if (section_addresses[{}] == (int32_t)0x{:08X}u) {{\n"
++        "        ctx->r31 = S32((uint32_t)section_addresses[{}] + 0x{:X}u);\n"
++        "        TrapDanglingJump(rdram, ctx);\n"
++        "    }} else {{\n"
++        "        {}(rdram, ctx);\n"
++        "    }}\n",
++        target.section_index, target_section.ram_addr, caller_section, return_offset, target.name);
++}
++
+@@ -447,2 +456 @@ void N64Recomp::CGenerator::emit_branch_condition(const ConditionalBranchOp& op,
+-    // Thread local variables to prevent allocations when possible.
+-    // TODO these thread locals probably don't actually help right now, so figure out a better way to prevent allocations.
++
+@@ -465,2 +473 @@ void N64Recomp::CGenerator::emit_switch(const Context& recompiler_context, const
+-    // TODO generate code to subtract the jump table address from the register's value instead.
+-    // Once that's done, the addend temp can be deleted to simplify the generator interface.
++
+@@ -527 +534 @@ void N64Recomp::CGenerator::emit_muldiv(InstrId instr_id, int reg1, int reg2) co
+-            // Cast to 64-bits before division to prevent artihmetic exception for s32(0x80000000) / -1
++
+@@ -566,2 +573 @@ void N64Recomp::CGenerator::process_binary_op(const BinaryOp& op, const Instruct
+-    // Thread local variables to prevent allocations when possible.
+-    // TODO these thread locals probably don't actually help right now, so figure out a better way to prevent allocations.
++
+@@ -576,2 +582 @@ void N64Recomp::CGenerator::process_unary_op(const UnaryOp& op, const Instructio
+-    // Thread local variables to prevent allocations when possible.
+-    // TODO these thread locals probably don't actually help right now, so figure out a better way to prevent allocations.
++
+@@ -586,2 +591 @@ void N64Recomp::CGenerator::process_store_op(const StoreOp& op, const Instructio
+-    // Thread local variables to prevent allocations when possible.
+-    // TODO these thread locals probably don't actually help right now, so figure out a better way to prevent allocations.
++
+diff --git a/src/config.cpp b/src/config.cpp
+index 1066aff..9b99992 100644
+--- a/src/config.cpp
++++ b/src/config.cpp
+@@ -18 +17,0 @@ std::vector<N64Recomp::ManualFunction> get_manual_funcs(const toml::array* manua
+-    // Reserve room for all the funcs in the map.
+@@ -44 +42,0 @@ std::vector<std::filesystem::path> get_data_syms_paths(const toml::array* data_s
+-    // Reserve room for all the funcs in the map.
+@@ -61 +58,0 @@ std::vector<std::string> get_stubbed_funcs(const toml::table* patches_data) {
+-    // Check if the stubs array exists.
+@@ -67 +63,0 @@ std::vector<std::string> get_stubbed_funcs(const toml::table* patches_data) {
+-        // Make room for all the stubs in the array.
+@@ -70 +65,0 @@ std::vector<std::string> get_stubbed_funcs(const toml::table* patches_data) {
+-        // Gather the stubs and place them into the array.
+@@ -87 +81,0 @@ std::vector<std::string> get_ignored_funcs(const toml::table* patches_data) {
+-    // Check if the ignored funcs array exists.
+@@ -93 +86,0 @@ std::vector<std::string> get_ignored_funcs(const toml::table* patches_data) {
+-        // Make room for all the ignored funcs in the array.
+@@ -96 +88,0 @@ std::vector<std::string> get_ignored_funcs(const toml::table* patches_data) {
+-        // Gather the ignored and place them into the array.
+@@ -110 +101,0 @@ std::vector<std::string> get_renamed_funcs(const toml::table* patches_data) {
+-    // Check if the renamed funcs array exists.
+@@ -116 +106,0 @@ std::vector<std::string> get_renamed_funcs(const toml::table* patches_data) {
+-        // Make room for all the renamed funcs in the array.
+@@ -119 +108,0 @@ std::vector<std::string> get_renamed_funcs(const toml::table* patches_data) {
+-        // Gather the renamed and place them into the array.
+@@ -129,0 +119,18 @@ std::vector<std::string> get_renamed_funcs(const toml::table* patches_data) {
++std::vector<std::string> get_reimplemented_funcs(const toml::table* patches_data) {
++    const auto node = (*patches_data)["reimplemented"];
++    std::vector<std::string> result;
++    if (!node) return result;
++    if (!node.is_array()) {
++        throw toml::parse_error("reimplemented must be an array of function names", node.node()->source());
++    }
++    std::unordered_set<std::string> seen;
++    for (const auto& value : *node.as_array()) {
++        auto name = value.value_exact<std::string>();
++        if (!name || name->empty() || !seen.emplace(*name).second) {
++            throw toml::parse_error("Invalid or duplicate reimplemented function", value.source());
++        }
++        result.push_back(*name);
++    }
++    return result;
++}
++
+@@ -133 +139,0 @@ std::vector<N64Recomp::FunctionSize> get_func_sizes(const toml::array* func_size
+-    // Reserve room for all the funcs in the map.
+@@ -141 +147 @@ std::vector<N64Recomp::FunctionSize> get_func_sizes(const toml::array* func_size
+-                // Make sure the size is divisible by 4
++
+@@ -143 +149 @@ std::vector<N64Recomp::FunctionSize> get_func_sizes(const toml::array* func_size
+-                    // It's not, so throw an error (and make it look like a normal toml one).
++
+@@ -163 +168,0 @@ std::vector<N64Recomp::InstructionPatch> get_instruction_patches(const toml::tab
+-    // Check if the instruction patch array exists.
+@@ -170 +174,0 @@ std::vector<N64Recomp::InstructionPatch> get_instruction_patches(const toml::tab
+-        // Copy all the patches into the output vector.
+@@ -175 +178,0 @@ std::vector<N64Recomp::InstructionPatch> get_instruction_patches(const toml::tab
+-                // Get the vram and make sure it's 4-byte aligned.
+@@ -185 +188 @@ std::vector<N64Recomp::InstructionPatch> get_instruction_patches(const toml::tab
+-                    // Not properly aligned, so throw an error (and make it look like a normal toml one).
++
+@@ -207 +209,0 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
+-    // Check if the function hook array exists.
+@@ -214 +215,0 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
+-        // Copy all the hooks into the output vector.
+@@ -219 +219,0 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
+-                // Get the vram and make sure it's 4-byte aligned.
+@@ -220,0 +221 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
++                std::optional<uint32_t> after_store_vram = cur_hook["after_store_vram"].value<uint32_t>();
+@@ -229 +230 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
+-                    // Not properly aligned, so throw an error (and make it look like a normal toml one).
++
+@@ -231,0 +233,7 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
++                if ((before_vram.has_value() && after_store_vram.has_value()) ||
++                    (after_store_vram.has_value() && (after_store_vram.value() == 0 || (after_store_vram.value() & 3)))) {
++                    throw toml::parse_error("Hook requires one aligned nonzero after_store_vram or before_vram", el.source());
++                }
++                if (cur_hook.contains("after_store_vram") && !after_store_vram.has_value()) {
++                    throw toml::parse_error("after_store_vram must be a uint32 address", el.source());
++                }
+@@ -235,0 +244 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
++                    .after_store_vram = after_store_vram.has_value() ? (int32_t)after_store_vram.value() : 0,
+@@ -289 +298 @@ N64Recomp::Config::Config(const char* path) {
+-    // Start this config out as bad so that it has to finish parsing without errors to be good.
++
+@@ -298 +306,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Input section (required)
+@@ -379 +386,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Manual functions (optional)
+@@ -386 +392,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Manual function sizes (optional)
+@@ -393 +398,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Output binary path when using an elf file input, includes patching reference symbol MIPS32 relocs (optional)
+@@ -402 +406,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Control whether the recompiler warns about unpaired LO16 relocs (optional, defaults to true)
+@@ -411 +414,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Control whether the recompiler should look for and parse mdebug (optional, defaults to false)
+@@ -420 +422,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Symbols to ignore when parsing mdebug (option, defaults to empty)
+@@ -446 +447,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Patches section (optional)
+@@ -451 +451,0 @@ N64Recomp::Config::Config(const char* path) {
+-            // Stubs array (optional)
+@@ -454 +453,0 @@ N64Recomp::Config::Config(const char* path) {
+-            // Ignored funcs array (optional)
+@@ -455,0 +455 @@ N64Recomp::Config::Config(const char* path) {
++            reimplemented_funcs = get_reimplemented_funcs(table);
+@@ -457 +456,0 @@ N64Recomp::Config::Config(const char* path) {
+-            // Renamed funcs array (optional)
+@@ -460 +458,0 @@ N64Recomp::Config::Config(const char* path) {
+-            // Single-instruction patches (optional)
+@@ -463 +460,0 @@ N64Recomp::Config::Config(const char* path) {
+-            // Function hooks (optional)
+@@ -467 +463,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Use trace mode if enabled (optional)
+@@ -479 +474,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Function reference symbols file (optional)
+@@ -488 +482,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Data reference symbols files (optional)
+@@ -501 +494,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Control whether the recompiler emits exported symbol data.
+@@ -510 +502,0 @@ N64Recomp::Config::Config(const char* path) {
+-        // Enable patch recompilation strict mode, which ensures that patch functions are marked and that other functions are not marked as patches.
+@@ -516 +508 @@ N64Recomp::Config::Config(const char* path) {
+-            // Default to strict patch mode if a function reference symbol file was provided.
++
+@@ -525 +516,0 @@ N64Recomp::Config::Config(const char* path) {
+-    // No errors occured, so mark this config file as good.
+@@ -584 +574,0 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                // Read functions for the section.
+@@ -612 +602 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                            // Function isn't word aligned in vram.
++
+@@ -617 +607 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                            // Function isn't word aligned in rom.
++
+@@ -621 +610,0 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                        // Read the function's words if a rom was provided.
+@@ -624 +613 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                                // Function is out of bounds of the provided rom.
++
+@@ -628 +616,0 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                            // Get the function's words from the rom.
+@@ -647 +634,0 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                // Check if relocs exist for the section and read them if so.
+@@ -650 +637 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                    // Mark the section as relocatable, since it has relocs.
++
+@@ -654 +641 @@ bool N64Recomp::Context::from_symbol_file(const std::filesystem::path& symbol_fi
+-                        // Read relocs for the section.
++
+@@ -709 +695,0 @@ bool N64Recomp::Context::import_reference_context(const N64Recomp::Context& refe
+-    // Copy the reference context's sections into the real context's reference sections. 
+@@ -720 +705,0 @@ bool N64Recomp::Context::import_reference_context(const N64Recomp::Context& refe
+-    // Copy the functions from the reference context into the reference context's function map.
+@@ -726 +711 @@ bool N64Recomp::Context::import_reference_context(const N64Recomp::Context& refe
+-    
++
+@@ -730 +714,0 @@ bool N64Recomp::Context::import_reference_context(const N64Recomp::Context& refe
+-// Reads a data symbol file and adds its contents into this context's reference data symbols.
+@@ -740 +723,0 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-        // Create a mapping of rom address to section to ensure that the same section indexes are used for both function and data reference symbols.
+@@ -746 +729 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-        
++
+@@ -748 +731 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-        
++
+@@ -762 +745 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                    ref_section_index = N64Recomp::SectionAbsolute; // Non-relocatable bss section or absolute symbols, mark this as an absolute symbol
++                    ref_section_index = N64Recomp::SectionAbsolute;
+@@ -768 +751 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                    // Find the matching section from the function reference symbol file to ensure 
++
+@@ -774 +757 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                        ref_section_index = N64Recomp::SectionAbsolute; // Not in the function symbol reference file, so this section can be treated as non-relocatable.
++                        ref_section_index = N64Recomp::SectionAbsolute;
+@@ -786 +768,0 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                // Sanity check this section against the matching one in the function reference symbol file if one exists.
+@@ -797 +778,0 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                // Read functions for the section.
+@@ -806 +787 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-                    
++
+@@ -835 +815,0 @@ bool N64Recomp::Context::read_data_reference_syms(const std::filesystem::path& d
+-
+diff --git a/src/config.h b/src/config.h
+index 7d6db23..1462ba9 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -18,0 +19 @@ namespace N64Recomp {
++        int32_t after_store_vram;
+@@ -59,0 +61 @@ namespace N64Recomp {
++        std::vector<std::string> reimplemented_funcs;
+@@ -67 +69 @@ namespace N64Recomp {
+-        // Manual mappings of mdebug file records to elf sections.
++
+diff --git a/src/main.cpp b/src/main.cpp
+index b2816c0..c9d58ab 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -13,0 +14 @@
++#include "analysis.h"
+@@ -22 +22,0 @@ void add_manual_functions(N64Recomp::Context& context, const std::vector<N64Reco
+-    // Build a lookup from section name to section index.
+@@ -94,2 +94,2 @@ bool compare_files(const std::filesystem::path& file1_path, const std::filesyste
+-    std::ifstream file1(file1_path, std::ifstream::ate | std::ifstream::binary); //open file at the end
+-    std::ifstream file2(file2_path, std::ifstream::ate | std::ifstream::binary); //open file at the end
++    std::ifstream file1(file1_path, std::ifstream::ate | std::ifstream::binary);
++    std::ifstream file2(file2_path, std::ifstream::ate | std::ifstream::binary);
+@@ -102 +102 @@ bool compare_files(const std::filesystem::path& file1_path, const std::filesyste
+-        return false; //different file size
++        return false;
+@@ -105,2 +105,2 @@ bool compare_files(const std::filesystem::path& file1_path, const std::filesyste
+-    file1.seekg(0); //rewind
+-    file2.seekg(0); //rewind
++    file1.seekg(0);
++    file2.seekg(0);
+@@ -111 +111 @@ bool compare_files(const std::filesystem::path& file1_path, const std::filesyste
+-    return std::equal(begin1, std::istreambuf_iterator<char>(), begin2); //Second argument is end-of-range iterator
++    return std::equal(begin1, std::istreambuf_iterator<char>(), begin2);
+@@ -115 +115 @@ bool recompile_single_function(const N64Recomp::Context& context, size_t func_in
+-    // Open the temporary output file
++
+@@ -124 +123,0 @@ bool recompile_single_function(const N64Recomp::Context& context, size_t func_in
+-    // Write the file header
+@@ -133 +132 @@ bool recompile_single_function(const N64Recomp::Context& context, size_t func_in
+-    
++
+@@ -136,2 +134,0 @@ bool recompile_single_function(const N64Recomp::Context& context, size_t func_in
+-    // If a file of the target name exists and it's identical to the output file, delete the output file.
+-    // This prevents updating the existing file so that it doesn't need to be rebuilt.
+@@ -141 +138 @@ bool recompile_single_function(const N64Recomp::Context& context, size_t func_in
+-    // Otherwise, rename the new file to the target path.
++
+@@ -163 +160 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-    
++
+@@ -195 +191,0 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-            // Dump relocs into the function context file.
+@@ -201 +197 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-                        // TODO allow emitting MIPS32 relocs for specific sections via a toml option for TLB mapping support.
++
+@@ -212 +207,0 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-            // Dump functions into the function context file.
+@@ -223 +218 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-        
++
+@@ -228 +222,0 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-            // Dump other symbols into the data context file.
+@@ -234 +228 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-            
++
+@@ -241 +235 @@ void dump_context(const N64Recomp::Context& context, const std::unordered_map<ui
+-        // Dump absolute symbols into the data context file.
++
+@@ -321 +315 @@ int main(int argc, char** argv) {
+-    
++
+@@ -326 +319,0 @@ int main(int argc, char** argv) {
+-    // Build a context from the provided elf file.
+@@ -328 +321 @@ int main(int argc, char** argv) {
+-        // Lists of data symbols organized by section, only used if dumping context.
++
+@@ -331 +323,0 @@ int main(int argc, char** argv) {
+-        // Import symbols from any reference symbols files that were provided.
+@@ -334 +326 @@ int main(int argc, char** argv) {
+-                // Create a new temporary context to read the function reference symbol file into, since it's the same format as the recompilation symbol file.
++
+@@ -341 +332,0 @@ int main(int argc, char** argv) {
+-                // Use the reference context to build a reference symbol list for the actual context.
+@@ -379 +369,0 @@ int main(int argc, char** argv) {
+-        // Add any manual functions
+@@ -385 +375 @@ int main(int argc, char** argv) {
+-        
++
+@@ -388 +378 @@ int main(int argc, char** argv) {
+-            // Sort the data syms by address so the output is nicer.
++
+@@ -401 +391 @@ int main(int argc, char** argv) {
+-    // Build a context from the provided symbols file.
++
+@@ -415 +405 @@ int main(int argc, char** argv) {
+-        
++
+@@ -443 +432,0 @@ int main(int argc, char** argv) {
+-
+@@ -466 +454,0 @@ int main(int argc, char** argv) {
+-
+@@ -487 +474,0 @@ int main(int argc, char** argv) {
+-    // Stub out any functions specified in the config file.
+@@ -489 +476 @@ int main(int argc, char** argv) {
+-        // Check if the specified function exists.
++
+@@ -492,2 +479 @@ int main(int argc, char** argv) {
+-            // Function doesn't exist, present an error to the user instead of silently failing to stub it out.
+-            // This helps prevent typos in the config file or functions renamed between versions from causing issues.
++
+@@ -496 +482 @@ int main(int argc, char** argv) {
+-        // Mark the function as stubbed.
++
+@@ -500 +485,0 @@ int main(int argc, char** argv) {
+-    // Ignore any functions specified in the config file.
+@@ -502 +487 @@ int main(int argc, char** argv) {
+-        // Check if the specified function exists.
++
+@@ -505,2 +490 @@ int main(int argc, char** argv) {
+-            // Function doesn't exist, present an error to the user instead of silently failing to mark it as ignored.
+-            // This helps prevent typos in the config file or functions renamed between versions from causing issues.
++
+@@ -509 +493 @@ int main(int argc, char** argv) {
+-        // Mark the function as ignored.
++
+@@ -513 +497,17 @@ int main(int argc, char** argv) {
+-    // Rename any functions specified in the config file.
++    for (const std::string& name : config.reimplemented_funcs) {
++        auto found = context.functions_by_name.find(name + "_recomp");
++        if (found == context.functions_by_name.end()) found = context.functions_by_name.find(name);
++        if (found == context.functions_by_name.end()) {
++            exit_failure(fmt::format("Unknown reimplemented function {}\n", name));
++        }
++        auto& func = context.functions[found->second];
++        if (func.reimplemented || func.stubbed ||
++            std::find(config.ignored_funcs.begin(), config.ignored_funcs.end(), name) != config.ignored_funcs.end()) {
++            exit_failure(fmt::format("Conflicting implementation ownership for {}\n", name));
++        }
++        func.name = name + "_recomp";
++        func.reimplemented = true;
++        func.ignored = true;
++        context.functions_by_name.emplace(func.name, found->second);
++    }
++
+@@ -515 +515 @@ int main(int argc, char** argv) {
+-        // Check if the specified function exists.
++
+@@ -518,2 +518 @@ int main(int argc, char** argv) {
+-            // Function doesn't exist, present an error to the user instead of silently failing to rename it.
+-            // This helps prevent typos in the config file or functions renamed between versions from causing issues.
++
+@@ -522 +521 @@ int main(int argc, char** argv) {
+-        // Rename the function.
++
+@@ -527 +525,0 @@ int main(int argc, char** argv) {
+-    // Propogate the trace mode parameter.
+@@ -530 +527,0 @@ int main(int argc, char** argv) {
+-    // Apply any single-instruction patches.
+@@ -532 +529 @@ int main(int argc, char** argv) {
+-        // Check if the specified function exists.
++
+@@ -535,2 +532 @@ int main(int argc, char** argv) {
+-            // Function doesn't exist, present an error to the user instead of silently failing to stub it out.
+-            // This helps prevent typos in the config file or functions renamed between versions from causing issues.
++
+@@ -543 +538,0 @@ int main(int argc, char** argv) {
+-        // Check that the function actually contains this vram address.
+@@ -548 +542,0 @@ int main(int argc, char** argv) {
+-        // Calculate the instruction index and modify the instruction.
+@@ -553 +546,0 @@ int main(int argc, char** argv) {
+-    // Apply any function hooks.
+@@ -555 +548 @@ int main(int argc, char** argv) {
+-        // Check if the specified function exists.
++
+@@ -558,2 +551 @@ int main(int argc, char** argv) {
+-            // Function doesn't exist, present an error to the user instead of silently failing to stub it out.
+-            // This helps prevent typos in the config file or functions renamed between versions from causing issues.
++
+@@ -564 +556,2 @@ int main(int argc, char** argv) {
+-        int32_t func_vram = func.vram;
++        const uint32_t func_vram = func.vram;
++        const uint32_t hook_vram = uint32_t(patch.after_store_vram != 0 ? patch.after_store_vram : patch.before_vram);
+@@ -566,3 +559,2 @@ int main(int argc, char** argv) {
+-        // Check that the function actually contains this vram address.
+-        if (patch.before_vram < func_vram || patch.before_vram >= func_vram + func.words.size() * sizeof(func.words[0])) {
+-            exit_failure(fmt::format("Function {} has a function hook for vram 0x{:08X} but doesn't contain that vram address!", patch.func_name, (uint32_t)patch.before_vram));
++        if (hook_vram != 0 && (hook_vram < func_vram || uint64_t(hook_vram) >= uint64_t(func_vram) + func.words.size() * sizeof(func.words[0]))) {
++            exit_failure(fmt::format("Function {} has a function hook for vram 0x{:08X} but doesn't contain that vram address!", patch.func_name, hook_vram));
+@@ -571 +562,0 @@ int main(int argc, char** argv) {
+-        // No after_vram means this will be placed at the start of the function
+@@ -574,3 +565,2 @@ int main(int argc, char** argv) {
+-        // Calculate the instruction index.
+-        if (patch.before_vram != 0) {
+-          instruction_index = (static_cast<size_t>(patch.before_vram) - func_vram) / sizeof(uint32_t);
++        if (hook_vram != 0) {
++          instruction_index = (size_t(hook_vram) - func_vram) / sizeof(uint32_t);
+@@ -579,4 +569,5 @@ int main(int argc, char** argv) {
+-        // Check if a function hook already exits for that instruction index.
+-        auto hook_find = func.function_hooks.find(instruction_index);
+-        if (hook_find != func.function_hooks.end()) {
+-            exit_failure(fmt::format("Function {} already has a function hook for vram 0x{:08X}!", patch.func_name, (uint32_t)patch.before_vram));
++        auto& hooks = patch.after_store_vram != 0 ? func.store_hooks : func.function_hooks;
++
++        auto hook_find = hooks.find(instruction_index);
++        if (hook_find != hooks.end()) {
++            exit_failure(fmt::format("Function {} already has a function hook for vram 0x{:08X}!", patch.func_name, hook_vram));
+@@ -585 +576 @@ int main(int argc, char** argv) {
+-        func.function_hooks[instruction_index] = patch.text;
++        hooks[instruction_index] = patch.text;
+@@ -591 +582 @@ int main(int argc, char** argv) {
+-    
++
+@@ -594 +585 @@ int main(int argc, char** argv) {
+-        // Write the file header
++
+@@ -601 +591,0 @@ int main(int argc, char** argv) {
+-        // Print the extern for the base event index and the define to rename it if exports are allowed.
+@@ -616 +606 @@ int main(int argc, char** argv) {
+-        // Write the file header
++
+@@ -623 +612,0 @@ int main(int argc, char** argv) {
+-        // Print the extern for the base event index and the define to rename it if exports are allowed.
+@@ -638 +626,0 @@ int main(int argc, char** argv) {
+-    // If exports are enabled, scan all the relocs and modify ones that point to an event function.
+@@ -640 +628 @@ int main(int argc, char** argv) {
+-        // First, find the event section by scanning for a section with the special name.
++
+@@ -654 +641,0 @@ int main(int argc, char** argv) {
+-        // If an event section was found, proceed with the reloc scanning.
+@@ -658,2 +645 @@ int main(int argc, char** argv) {
+-                    // Event symbols aren't reference symbols, since they come from the elf itself.
+-                    // Therefore, skip reference symbol relocs.
++
+@@ -664 +649,0 @@ int main(int argc, char** argv) {
+-                    // Ignore R_MIPS_NONE relocs, which get produced during symbol parsing for non-relocatable reference sections.
+@@ -669 +653,0 @@ int main(int argc, char** argv) {
+-                    // Check if the reloc points to the event section.
+@@ -671 +655 @@ int main(int argc, char** argv) {
+-                        // It does, so find the function it's pointing at.
++
+@@ -678 +661,0 @@ int main(int argc, char** argv) {
+-                        // Ensure the reloc is a MIPS_R_26 one before modifying it, since those are the only type allowed to reference
+@@ -685 +667,0 @@ int main(int argc, char** argv) {
+-                        // Check if this function has been assigned an event index already, and assign it if not.
+@@ -696 +677,0 @@ int main(int argc, char** argv) {
+-                        // Modify the reloc's fields accordingly.
+@@ -711 +691,0 @@ int main(int argc, char** argv) {
+-    //#pragma omp parallel for
+@@ -720 +700 @@ int main(int argc, char** argv) {
+-            // Apply strict patch mode validation if enabled.
++
+@@ -728 +707,0 @@ int main(int argc, char** argv) {
+-                // This is a patch function, but no corresponding symbol was found in the original symbol list.
+@@ -734 +713 @@ int main(int argc, char** argv) {
+-                // This is not a patch function, but it has the same name as a function in the original symbol list.
++
+@@ -741 +720 @@ int main(int argc, char** argv) {
+-            // Check if this is an export and add it to the list if exports are enabled.
++
+@@ -746 +724,0 @@ int main(int argc, char** argv) {
+-            // Recompile the function.
+@@ -782 +759,0 @@ int main(int argc, char** argv) {
+-        // Sort the section's functions
+@@ -784 +761 @@ int main(int argc, char** argv) {
+-        // Sort and deduplicate the static functions via a set
++
+@@ -792 +768,0 @@ int main(int argc, char** argv) {
+-            // Determine the end of this static function
+@@ -795,5 +771 @@ int main(int argc, char** argv) {
+-            // Search for the closest function 
+-            size_t closest_func_index = 0;
+-            while (section_funcs[closest_func_index] < static_func_addr && closest_func_index < section_funcs.size()) {
+-                closest_func_index++;
+-            }
++            const auto closest_func = std::lower_bound(section_funcs.begin(), section_funcs.end(), static_func_addr);
+@@ -801,4 +773,3 @@ int main(int argc, char** argv) {
+-            // Check if there's a nonstatic function after this one
+-            if (closest_func_index < section_funcs.size()) {
+-                // If so, use that function's address as the end of this one
+-                cur_func_end = section_funcs[closest_func_index];
++            if (closest_func != section_funcs.end()) {
++
++                cur_func_end = *closest_func;
+@@ -807 +777,0 @@ int main(int argc, char** argv) {
+-            // Check for any known statics after this function and truncate this function's size to make sure it doesn't overlap.
+@@ -814 +784,11 @@ int main(int argc, char** argv) {
+-            uint32_t rom_addr = static_cast<uint32_t>(static_func_addr - section.ram_addr + section.rom_addr);
++            if (static_func_addr < section.ram_addr || static_func_addr >= cur_func_end ||
++                (static_func_addr & 3) != 0 || (cur_func_end & 3) != 0) {
++                exit_failure(fmt::format("Invalid static function range 0x{:08X}..0x{:08X} in {}\n",
++                    static_func_addr, cur_func_end, section.name));
++            }
++            uint64_t checked_rom_addr = uint64_t(static_func_addr - section.ram_addr) + section.rom_addr;
++            uint64_t checked_size = uint64_t(cur_func_end) - static_func_addr;
++            if (checked_rom_addr > context.rom.size() || checked_size > context.rom.size() - checked_rom_addr) {
++                exit_failure(fmt::format("Static function 0x{:08X} extends outside ROM\n", static_func_addr));
++            }
++            uint32_t rom_addr = static_cast<uint32_t>(checked_rom_addr);
+@@ -820 +799,0 @@ int main(int argc, char** argv) {
+-            // Create the new function and add it to the context.
+@@ -831,0 +811,4 @@ int main(int argc, char** argv) {
++            context.functions_by_vram[static_func_addr].push_back(new_func_index);
++            context.functions_by_name.emplace(new_func.name, new_func_index);
++            context.section_functions[section_index].push_back(new_func_index);
++
+@@ -850 +832,0 @@ int main(int argc, char** argv) {
+-            // Add any new static functions that were found while recompiling this one.
+@@ -869,0 +852,45 @@ int main(int argc, char** argv) {
++    {
++        std::ofstream mapping_file(config.output_func_path / "recomp_mappings.tsv");
++        if (!mapping_file) {
++            exit_failure("Cannot create recompilation mapping manifest\n");
++        }
++        fmt::print(mapping_file, "schema\t1\n");
++        for (size_t section_index = 0; section_index < context.sections.size(); ++section_index) {
++            const auto& section = context.sections[section_index];
++            fmt::print(mapping_file, "section\t{}\t{:08X}\t{:08X}\t{:08X}\t{}\n",
++                section_index, section.ram_addr, section.rom_addr, section.size, section.name);
++            for (size_t func_index : context.section_functions[section_index]) {
++                const auto& func = context.functions[func_index];
++                const char* kind = func.reimplemented ? "runtime" : func.ignored ? "ignored" : func.stubbed ? "stubbed" : "native";
++                fmt::print(mapping_file, "function\t{}\t{:08X}\t{:08X}\t{}\t{}\n",
++                    section_index, func.vram, func.words.size() * 4, kind, func.name);
++                if (func.ignored || func.reimplemented || func.stubbed || func.words.empty()) {
++                    continue;
++                }
++                std::vector<rabbitizer::InstructionCpu> instructions;
++                instructions.reserve(func.words.size());
++                uint32_t vram = func.vram;
++                for (uint32_t word : func.words) {
++                    instructions.emplace_back(byteswap(word), vram);
++                    vram += 4;
++                }
++                N64Recomp::FunctionStats stats{};
++                if (!N64Recomp::analyze_function(context, func, instructions, stats)) {
++                    exit_failure(fmt::format("Mapping analysis failed for {}\n", func.name));
++                }
++                for (const auto& table : stats.jump_tables) {
++                    fmt::print(mapping_file, "jump_table\t{}\t{:08X}\t{:08X}\t{:08X}",
++                        section_index, func.vram, table.jr_vram, table.vram);
++                    for (uint32_t target : table.entries) {
++                        fmt::print(mapping_file, "\t{:08X}", target);
++                    }
++                    fmt::print(mapping_file, "\n");
++                }
++            }
++        }
++        mapping_file.flush();
++        if (!mapping_file) {
++            exit_failure("Failed writing recompilation mapping manifest\n");
++        }
++    }
++
+@@ -872 +899 @@ int main(int argc, char** argv) {
+-        
++
+@@ -893 +920 @@ int main(int argc, char** argv) {
+-        fmt::print(overlay_file, 
++        fmt::print(overlay_file,
+@@ -924 +950,0 @@ int main(int argc, char** argv) {
+-                // Write the section's table entry.
+@@ -929 +954,0 @@ int main(int argc, char** argv) {
+-                // Write the section's functions.
+@@ -944 +968,0 @@ int main(int argc, char** argv) {
+-                // Write the section's relocations.
+@@ -946 +970 @@ int main(int argc, char** argv) {
+-                    // Determine if reference symbols are being used.
++
+@@ -954,2 +978 @@ int main(int argc, char** argv) {
+-                        // In reference symbol mode, only emit relocations into the table that point to
+-                        // non-absolute reference symbols, events, or manual patch symbols.
++
+@@ -961 +984 @@ int main(int argc, char** argv) {
+-                        // Otherwise, emit all relocs.
++
+@@ -990 +1012,0 @@ int main(int argc, char** argv) {
+-
+@@ -996 +1018 @@ int main(int argc, char** argv) {
+-                // Check if this is an empty overlay
++
+@@ -1013,2 +1035,2 @@ int main(int argc, char** argv) {
+-            // Emit the exported function table.
+-            fmt::print(overlay_file, 
++
++            fmt::print(overlay_file,
+@@ -1022 +1044 @@ int main(int argc, char** argv) {
+-            // Add a dummy element at the end to ensure the array has a valid length because C doesn't allow zero-size arrays.
++
+@@ -1026 +1047,0 @@ int main(int argc, char** argv) {
+-            // Emit the event table.
+@@ -1041 +1062 @@ int main(int argc, char** argv) {
+-            // Add a dummy element at the end to ensure the array has a valid length because C doesn't allow zero-size arrays.
++
+@@ -1045 +1065,0 @@ int main(int argc, char** argv) {
+-            // Collect manual patch symbols.
+@@ -1052 +1072 @@ int main(int argc, char** argv) {
+-            }            
++            }
+@@ -1054 +1073,0 @@ int main(int argc, char** argv) {
+-            // Sort the manual patch symbols by vram.
+@@ -1059 +1077,0 @@ int main(int argc, char** argv) {
+-            // Emit the manual patch symbols.
+@@ -1070 +1088 @@ int main(int argc, char** argv) {
+-            // Add a dummy element at the end to ensure the array has a valid length because C doesn't allow zero-size arrays.
++
+diff --git a/src/recompilation.cpp b/src/recompilation.cpp
+index c228433..0fcd704 100644
+--- a/src/recompilation.cpp
++++ b/src/recompilation.cpp
+@@ -5,0 +6 @@
++#include <type_traits>
+@@ -25 +26 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // Skip resolution if all function calls should use lookup and just return Ambiguous.
++
+@@ -30 +30,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // Look for symbols with the target vram address
+@@ -38 +37,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // Use a thread local to prevent reallocation across runs and to allow multi-threading in the future.
+@@ -42 +40,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // Evaluate any functions with the target address to see if they're potential candidates for JAL resolution.
+@@ -47 +44,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-            // Zero-sized symbol handling. unless there's only one matching target.
+@@ -54 +50,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-            // Immediately accept a function in the same section as this one, since it must also be loaded if the current function is.
+@@ -62 +57,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-            // If the function's section isn't relocatable, add the function as a candidate.
+@@ -70 +64,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // If the target vram is in the current section, only allow exact matches.
+@@ -72 +66 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-        // If an exact match was found, use it.
++
+@@ -77 +71 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-        // Otherwise, create a static function at the target address.
++
+@@ -82 +76 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // Otherwise, disambiguate based on the matches found.
++
+@@ -84,2 +78 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-        // If there were no matches then JAL resolution has failed.
+-        // A static can't be created as the target section is unknown.
++
+@@ -89 +82 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-        // If there was an exact match, use it.
++
+@@ -94 +87 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-        // If there's more than one match, use an indirect jump to resolve the function at runtime.
++
+@@ -100 +92,0 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+-    // This should never be hit, so return an error.
+@@ -123,0 +116,5 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
++    const auto store_hook = func.store_hooks.find(instr_index);
++    if (store_hook != func.store_hooks.end() && !store_ops.contains(instr_id)) {
++        fmt::print(stderr, "Store-completion hook targets non-store instruction at 0x{:08X} in {}\n", instr_vram, func.name);
++        return false;
++    }
+@@ -137 +133,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Output a comment with the original instruction
+@@ -147,2 +142,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Replace loads for jump table entries into addiu. This leaves the jump table entry's address in the output register
+-    // instead of the entry's value, which can then be used to determine the offset from the start of the jump table.
+@@ -164 +157,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Check if this instruction has a reloc.
+@@ -167 +160 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // Get the reloc data for this instruction
++
+@@ -171 +163,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // Check if the relocation references a relocatable section.
+@@ -178 +169,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // Only process this relocation if the target section is relocatable or if this relocation targets a reference symbol.
+@@ -180 +171 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // Record the reloc's data.
++
+@@ -183 +174 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // Ignore all relocs that aren't MIPS_HI16, MIPS_LO16 or MIPS_26.
++
+@@ -187 +178 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                    // Don't try to relocate special section symbols.
++
+@@ -189 +180 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                        // TODO this may not be needed anymore as HI16/LO16 relocs to non-relocatable sections is handled directly in elf parsing.
++
+@@ -191 +182 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                        // Resolve HI16 and LO16 reference symbol relocs to non-relocatable sections by patching the instruction immediate.
++
+@@ -193 +184 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                            // The reloc has been processed, so set it to none to prevent it getting processed a second time during instruction code generation.
++
+@@ -201 +191,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // Repoint bss relocations at their non-bss counterpart section.
+@@ -262 +252 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    auto print_func_call_by_address = [&generator, reloc_target_section_offset, has_reloc, reloc_section, reloc_reference_symbol, reloc_type, &context, &func, &static_funcs_out, &needs_link_branch, &print_indent, &process_delay_slot, &print_link_branch]
++    auto print_func_call_by_address = [&generator, instr_id, instr_vram, reloc_target_section_offset, has_reloc, reloc_section, reloc_reference_symbol, reloc_type, &context, &func, &static_funcs_out, &needs_link_branch, &print_indent, &process_delay_slot, &print_link_branch]
+@@ -267 +257 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // Event symbol, emit a call to the runtime to trigger this event.
++
+@@ -280 +270 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // Normal symbol or reference symbol, 
++
+@@ -300 +290 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                // If this instruction has a reloc and the target section is a normal section, use the section of the reloc when searching for a matching target function. 
++
+@@ -314 +304 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                        // Create a static function add it to the static function list for this section.
++
+@@ -320 +310 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                        // Print a warning if lookup isn't forced for all non-reloc function calls.
++
+@@ -324,3 +314 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                        // Relocation isn't necessary for jumps inside a relocatable section, as this code path will never run if the target vram
+-                        // is in the current function's section (see the branch for `in_current_section` above).
+-                        // If a game ever needs to jump between multiple relocatable sections, relocation will be necessary here.
++
+@@ -350,0 +339,16 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
++            else if constexpr (std::is_same_v<GeneratorType, N64Recomp::CGenerator>) {
++                const bool lazy_overlay_call =
++                    instr_id == N64Recomp::InstrId::cpu_jal &&
++                    has_reloc && reloc_type == N64Recomp::RelocType::R_MIPS_26 &&
++                    reloc_section < context.sections.size() &&
++                    reloc_section != func.section_index &&
++                    context.sections[reloc_section].name.starts_with(".overlay_");
++                if (lazy_overlay_call) {
++                    generator.emit_overlay_function_call(
++                        context, matched_func_index, func.section_index,
++                        instr_vram + 8 - context.sections[func.section_index].ram_addr);
++                }
++                else {
++                    generator.emit_function_call(context, matched_func_index);
++                }
++            }
+@@ -360 +364 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // If the branch target is outside the current function, check if it can be treated as a tail call.
++
+@@ -362,2 +366 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // If the branch target is the start of some known function, this can be handled as a tail call.
+-            // FIXME: how to deal with static functions?
++
+@@ -371,3 +374 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                // TODO check if this branch close should exist.
+-                // print_indent();
+-                // generator.emit_branch_close();
++
+@@ -387 +388 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // TODO check if this link branch ever exists.
++
+@@ -417 +418 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Cop0 (Limited functionality)
++
+@@ -446 +447 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Arithmetic
++
+@@ -450 +451 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // Check if this addu belongs to a jump table load
++
+@@ -455 +456 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // If so, create a temp to preserve the addend register's value
++
+@@ -474 +475 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Branches
++
+@@ -481 +482 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // jalr can only be handled with $ra as the return address register
++
+@@ -497 +498 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // Check if the branch is within this function
++
+@@ -501,12 +502 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-            // This may be a tail call in the middle of the control flow due to a previous check
+-            // For example:
+-            // ```c
+-            // void test() {
+-            //     if (SOME_CONDITION) {
+-            //         do_a();
+-            //     } else {
+-            //         do_b();
+-            //     }
+-            // }
+-            // ```
+-            // FIXME: how to deal with static functions?
++
+@@ -566 +556 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // syscalls don't link, so treat it like a tail call
++
+@@ -575 +564,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // Cop1 rounding mode
+@@ -611 +600 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    
++
+@@ -636 +625 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                // No MIPS3 float check needed for non-float operands.
++
+@@ -640 +629 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    
++
+@@ -662 +651 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-                // No NaN checks needed for non-float operands.
++
+@@ -671 +660 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        
++
+@@ -693 +682 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        
++
+@@ -712,2 +701 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        // TODO combining the branch condition and branch target into one generator call would allow better optimization in the runtime's JIT generator.
+-        // This would require splitting into a conditional jump method and conditional function call method.
++
+@@ -730 +718 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-        
++
+@@ -744,0 +733,4 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
++        if (store_hook != func.store_hooks.end()) {
++            if (indent) print_indent();
++            fmt::print(output_file, "    {}\n", store_hook->second);
++        }
+@@ -753 +744,0 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+-    // TODO is this used?
+@@ -765 +756 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-    //fmt::print("Recompiling {}\n", func.name);
++
+@@ -776 +766,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-    // Skip analysis and recompilation of this function is stubbed.
+@@ -778 +768 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-        // Use a set to sort and deduplicate labels
++
+@@ -787 +776,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-        // First pass, disassemble each instruction and collect branch labels
+@@ -792 +780,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // If this is a branch or a direct jump, add it to the local label list
+@@ -797 +784,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Advance the vram address by the size of one instruction
+@@ -801 +787,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-        // Analyze function
+@@ -811 +796,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-        // Add jump table labels into function
+@@ -819 +803,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-        // Second pass, emit code for each instruction and emit labels
+@@ -831 +815 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // If we're in the delay slot of a likely instruction, emit a goto to skip the instruction before any labels
++
+@@ -835 +819 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // If there are any other branch labels to insert and we're at the next one, insert it
++
+@@ -841 +824,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Advance the reloc index until we reach the last one or until we get to/pass the current instruction
+@@ -846 +828,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Process the current instruction and check for errors
+@@ -852 +834 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // If a link return branch was generated, advance the number of link return branches
++
+@@ -856 +838 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Now that the instruction has been processed, emit a skip label for the likely branch if needed
++
+@@ -862 +844 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Mark the next instruction as being in a likely delay slot if the 
++
+@@ -864 +846 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-            // Advance the vram address by the size of one instruction
++
+@@ -869 +850,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-    // Terminate the function
+@@ -871 +852 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-    
++
+@@ -875 +855,0 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
+-// Wrap the templated function with CGenerator as the template parameter.

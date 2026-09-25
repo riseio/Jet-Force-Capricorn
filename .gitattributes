@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.patch text eol=lf -whitespace
+AppRun text eol=lf
+*.png binary
+*.ttf binary
+*.rtz binary

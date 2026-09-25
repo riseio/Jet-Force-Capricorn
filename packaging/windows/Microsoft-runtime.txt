@@ -1,0 +1,13 @@
+Microsoft Visual C++ Runtime
+
+The Microsoft.VC143.CRT DLLs in this package are unmodified redistributable
+components from the Visual Studio 2022 Build Tools installation used by CMake.
+They are licensed by Microsoft, not under the project's source-code license.
+They are supplied app-local solely to run this application on Windows.
+
+Redistribution list and terms:
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+https://visualstudio.microsoft.com/license-terms/vs2022-ga-diagnosticbuildtools/
+
+Windows system components (including the Windows 10/11 Universal CRT and the
+GPU driver) are not copied from System32 or redistributed in this package.

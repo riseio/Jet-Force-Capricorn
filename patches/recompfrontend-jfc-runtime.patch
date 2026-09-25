@@ -1,0 +1,1815 @@
+diff --git a/recompinput/include/recompinput/input_events.h b/recompinput/include/recompinput/input_events.h
+index 5f4420f..7696773 100644
+--- a/recompinput/include/recompinput/input_events.h
++++ b/recompinput/include/recompinput/input_events.h
+@@ -5,0 +6,6 @@ namespace recompinput {
++    enum class VisualToggleSource : uint64_t {
++        SDL = 1ULL << 0,
++        DeckHid = 1ULL << 1,
++        Diagnostic = 1ULL << 2,
++    };
++
+@@ -7,0 +14,6 @@ namespace recompinput {
++    void request_r4_toggle(const char* source);
++    void request_config_open(const char* source);
++    void set_visual_enhancement_toggle_pressed(
++        VisualToggleSource source, bool pressed, const char* source_name);
++    void pulse_visual_enhancement_toggle(
++        VisualToggleSource source, const char* source_name);
+diff --git a/recompinput/include/recompinput/input_state.h b/recompinput/include/recompinput/input_state.h
+index 1961e29..d13cd7b 100644
+--- a/recompinput/include/recompinput/input_state.h
++++ b/recompinput/include/recompinput/input_state.h
+@@ -5 +4,0 @@
+-// disable warning: '/*' within block comment [-Wcomment] for GamepadMotion.hpp
+@@ -46,0 +46,3 @@ namespace recompinput {
++    SDL_GameController *register_controller_device(int device_index);
++    size_t discover_connected_controllers();
++    size_t get_registered_controller_count();
+diff --git a/recompinput/include/recompinput/input_types.h b/recompinput/include/recompinput/input_types.h
+index f5ed6c0..6a71e49 100644
+--- a/recompinput/include/recompinput/input_types.h
++++ b/recompinput/include/recompinput/input_types.h
+@@ -39,0 +40,15 @@ namespace recompinput {
++    #define DEFINE_GAMEPLAY_ENHANCEMENT_INPUTS() \
++        DEFINE_INPUT(JUMP, 0, "Jump / Stand") \
++        DEFINE_INPUT(CROUCH, 0, "Crouch") \
++        DEFINE_INPUT(SPRINT, 0, "Sprint") \
++        DEFINE_INPUT(QUICK_SWITCH, 0, "Quick Character Switch") \
++        DEFINE_INPUT(SAVE_STATE, 0, "Save State") \
++        DEFINE_INPUT(RESTORE_STATE, 0, "Restore State") \
++        DEFINE_INPUT(INTERACT, 0, "Interact") \
++        DEFINE_INPUT(QUICK_SWITCH_MODIFIER, 0, "Shortcut Modifier") \
++        DEFINE_INPUT(WEAPON_SLOT_1, 0, "Weapon Slot 1 / Up") \
++        DEFINE_INPUT(WEAPON_SLOT_2, 0, "Weapon Slot 2 / Right") \
++        DEFINE_INPUT(WEAPON_SLOT_3, 0, "Weapon Slot 3 / Down") \
++        DEFINE_INPUT(WEAPON_SLOT_4, 0, "Weapon Slot 4 / Left") \
++        DEFINE_INPUT(QUICK_GRENADE, 0, "Quick Grenade")
++
+@@ -42,0 +58 @@ namespace recompinput {
++        DEFINE_GAMEPLAY_ENHANCEMENT_INPUTS() \
+@@ -46,3 +62 @@ namespace recompinput {
+-    // - Enum containing every recomp input.
+-    // - Includes inputs that are specific to menu navigation.
+-    // - This represents what any controller/keyboard can bind to.
++
+@@ -60 +73,0 @@ namespace recompinput {
+-    // What type of source an input comes from (SDL_Scancode, SDL_GameControllerButton, SDL_GameControllerAxis, SDL_BUTTON, etc.)
+@@ -62 +75 @@ namespace recompinput {
+-        None = 0, // Using zero for None ensures that default initialized InputFields are unbound.
++        None = 0,
+@@ -66 +79,2 @@ namespace recompinput {
+-        ControllerAnalog // Axis input_id values are the SDL value + 1
++        ControllerAnalog,
++        MouseWheel
+@@ -69,2 +82,0 @@ namespace recompinput {
+-    
+-    // A single input. Combines the source of the input (see InputType) and a specific key/button/axis.
+@@ -73 +85 @@ namespace recompinput {
+-        // Represents a single source input. e.g. A keyboard's shift key, or a controller's R trigger
++
+@@ -81,0 +94,8 @@ namespace recompinput {
++        static InputField mouse(int32_t button) {
++            return InputField{ InputType::Mouse, button };
++        }
++
++        static InputField mouse_wheel(bool up) {
++            return InputField{ InputType::MouseWheel, up ? 1 : -1 };
++        }
++
+@@ -104 +123,0 @@ namespace recompinput {
+-    // Represents the types of mapping/profiles that can be done.
+@@ -116 +134,0 @@ namespace recompinput {
+-
+diff --git a/recompinput/include/recompinput/logical_button.h b/recompinput/include/recompinput/logical_button.h
+new file mode 100644
+index 0000000..599d09c
+--- /dev/null
++++ b/recompinput/include/recompinput/logical_button.h
+@@ -0,0 +1,51 @@
++#pragma once
++
++#include <atomic>
++#include <cstdint>
++
++namespace recompinput {
++
++class LogicalButton {
++public:
++    bool set_source_pressed(uint64_t source, bool pressed) {
++        if (source == 0 || (source & (source - 1U)) != 0) {
++            return false;
++        }
++
++        if (pressed) {
++            const uint64_t prior = held_sources.fetch_or(
++                source, std::memory_order_acq_rel);
++            if ((prior & source) != 0 || prior != 0) {
++                return false;
++            }
++            pending_presses.fetch_add(1, std::memory_order_release);
++            return true;
++        }
++
++        held_sources.fetch_and(~source, std::memory_order_acq_rel);
++        return false;
++    }
++
++    bool consume_press() {
++        uint64_t pending = pending_presses.load(std::memory_order_acquire);
++        while (pending != 0) {
++            if (pending_presses.compare_exchange_weak(
++                    pending, pending - 1U,
++                    std::memory_order_acq_rel,
++                    std::memory_order_acquire)) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    uint64_t pending_count() const {
++        return pending_presses.load(std::memory_order_acquire);
++    }
++
++private:
++    std::atomic_uint64_t held_sources{0};
++    std::atomic_uint64_t pending_presses{0};
++};
++
++}
+diff --git a/recompinput/include/recompinput/relative_delta_frame.h b/recompinput/include/recompinput/relative_delta_frame.h
+new file mode 100644
+index 0000000..54920f1
+--- /dev/null
++++ b/recompinput/include/recompinput/relative_delta_frame.h
+@@ -0,0 +1,28 @@
++#pragma once
++
++#include <array>
++
++namespace recompinput {
++
++class RelativeDeltaFrame {
++public:
++    void add(float x, float y) {
++        pending_[0] += x;
++        pending_[1] += y;
++    }
++
++    void begin_frame() {
++        current_ = pending_;
++        pending_ = {0.0f, 0.0f};
++    }
++
++    const std::array<float, 2>& value() const {
++        return current_;
++    }
++
++private:
++    std::array<float, 2> current_{};
++    std::array<float, 2> pending_{};
++};
++
++}
+diff --git a/recompinput/include/recompinput/wheel_button_frame.h b/recompinput/include/recompinput/wheel_button_frame.h
+new file mode 100644
+index 0000000..73f150e
+--- /dev/null
++++ b/recompinput/include/recompinput/wheel_button_frame.h
+@@ -0,0 +1,42 @@
++#pragma once
++
++#include <algorithm>
++#include <atomic>
++#include <cstdint>
++#include <limits>
++
++namespace recompinput {
++
++class WheelButtonFrame {
++public:
++    void add(int32_t delta) {
++        pending_ = std::clamp<int64_t>(pending_ + int64_t(delta),
++            std::numeric_limits<int32_t>::min(),
++            std::numeric_limits<int32_t>::max());
++    }
++
++    void begin_frame(bool enabled) {
++        if (!enabled) {
++            pending_ = 0;
++            current_.store(0);
++        }
++        else if (current_.load() != 0) {
++            current_.store(0);
++        }
++        else {
++            const int direction = (pending_ > 0) - (pending_ < 0);
++            pending_ -= direction;
++            current_.store(direction);
++        }
++    }
++
++    bool pressed(int32_t direction) const {
++        return (direction == 1 || direction == -1) && current_.load() == direction;
++    }
++
++private:
++    int64_t pending_ = 0;
++    std::atomic<int> current_{0};
++};
++
++}
+diff --git a/recompinput/src/input_events.cpp b/recompinput/src/input_events.cpp
+index c76a1dc..3577bab 100644
+--- a/recompinput/src/input_events.cpp
++++ b/recompinput/src/input_events.cpp
+@@ -3,0 +4 @@
++#include "recompinput/logical_button.h"
+@@ -7,0 +9,4 @@
++#include <atomic>
++#include <algorithm>
++#include <cstdint>
++
+@@ -11,0 +17,6 @@ static struct {
++namespace {
++std::atomic_bool r4_toggle_requested{false};
++std::atomic_bool config_open_requested{false};
++recompinput::LogicalButton visual_toggle_button{};
++}
++
+@@ -13,0 +25,30 @@ namespace recompinput {
++void request_config_open(const char* source) {
++    config_open_requested.store(true, std::memory_order_release);
++
++}
++
++void request_r4_toggle(const char* source) {
++    r4_toggle_requested.store(true, std::memory_order_release);
++
++}
++
++void set_visual_enhancement_toggle_pressed(
++    VisualToggleSource source,
++    bool pressed,
++    const char* source_name
++) {
++    const bool logical_edge = visual_toggle_button.set_source_pressed(
++        static_cast<uint64_t>(source), pressed);
++    if (logical_edge) {
++
++    }
++}
++
++void pulse_visual_enhancement_toggle(
++    VisualToggleSource source,
++    const char* source_name
++) {
++    set_visual_enhancement_toggle_pressed(source, true, source_name);
++    set_visual_enhancement_toggle_pressed(source, false, source_name);
++}
++
+@@ -20 +60,0 @@ void queue_if_enabled(SDL_Event* event) {
+-// Controllers plugged in while in single player mode will create profiles after switching to multiplayer.
+@@ -47 +86,0 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-        // Skip repeated events when not in the menu
+@@ -76,2 +115,2 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-        SDL_GameController* controller = SDL_GameControllerOpen(controller_event->which);
+-        printf("Controller added: %d\n", controller_event->which);
++        SDL_GameController* controller =
++            recompinput::register_controller_device(controller_event->which);
+@@ -79,4 +117,0 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-            printf("  Instance ID: %d\n", SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)));
+-            printf("  Path: %s\n", SDL_JoystickPath(SDL_GameControllerGetJoystick(controller)));
+-            recompinput::add_controller_state(SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)), controller);
+-
+@@ -87,9 +122,9 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-        }
+-        
+-        ControllerGUID guid = profiles::get_guid_from_sdl_controller(controller);
+-        if (profiles::get_controller_by_guid(guid) < 0) {
+-            if (players::is_single_player_mode()) {
+-                deferred_controller_profiles[guid.hash] = guid;
+-            } else {
+-                int profile_index = get_or_create_controller_profile_index(guid);
+-                profiles::add_controller(guid, profile_index);
++
++            ControllerGUID guid = profiles::get_guid_from_sdl_controller(controller);
++            if (profiles::get_controller_by_guid(guid) < 0) {
++                if (players::is_single_player_mode()) {
++                    deferred_controller_profiles[guid.hash] = guid;
++                } else {
++                    int profile_index = get_or_create_controller_profile_index(guid);
++                    profiles::add_controller(guid, profile_index);
++                }
+@@ -116,0 +152,13 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
++    case SDL_EventType::SDL_MOUSEBUTTONDOWN:
++        if (binding::is_binding() &&
++            binding::get_scanning_device() == InputDevice::Keyboard) {
++            binding::set_scanned_input(
++                { InputType::Mouse, event->button.button });
++        }
++        else {
++            queue_if_enabled(event);
++        }
++        break;
++    case SDL_EventType::SDL_MOUSEBUTTONUP:
++        queue_if_enabled(event);
++        break;
+@@ -120 +168,12 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-        recompinput::add_mouse_wheel_delta(wheel_event->y * (wheel_event->direction == SDL_MOUSEWHEEL_FLIPPED ? -1 : 1));
++        const int64_t normalized = int64_t(wheel_event->y) *
++            (wheel_event->direction == SDL_MOUSEWHEEL_FLIPPED ? -1 : 1);
++        const int32_t delta = static_cast<int32_t>(std::clamp<int64_t>(
++            normalized, -INT32_MAX, INT32_MAX));
++        if (delta != 0 && binding::is_binding() &&
++            binding::get_scanning_device() == InputDevice::Keyboard) {
++            binding::set_scanned_input(InputField::mouse_wheel(delta > 0));
++            break;
++        }
++        if (!recompinput::game_input_disabled() && !binding::should_skip_events()) {
++            recompinput::add_mouse_wheel_delta(delta);
++        }
+@@ -124,0 +184,11 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
++        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK &&
++                !binding::is_binding()) {
++            set_visual_enhancement_toggle_pressed(
++                VisualToggleSource::SDL, true, "sdl");
++            break;
++        }
++        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_PADDLE1 &&
++                !binding::is_binding()) {
++            request_r4_toggle("sdl");
++            break;
++        }
+@@ -126 +196 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-            // TODO: Needs the controller profile index.
++
+@@ -129 +199 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-            // note - magic number: 0 is InputType::None
++
+@@ -192 +262 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-            // Convert acceleration to g's.
++
+@@ -202,2 +272 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-            // constexpr float gyro_threshold = 0.05f;
+-            // Convert rotational velocity to degrees per second.
++
+@@ -238 +307,6 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
+-        // Always queue button up events to avoid missing them during binding.
++        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
++            set_visual_enhancement_toggle_pressed(
++                VisualToggleSource::SDL, false, "sdl");
++            break;
++        }
++
+@@ -258 +331,0 @@ void handle_events() {
+-        // Lock the cursor if all three conditions are true: mouse aiming is enabled, game input is not disabled, and the game has been started. 
+@@ -261 +333,0 @@ void handle_events() {
+-        // Hide the cursor based on its enable state, but override visibility to false if the cursor is locked.
+@@ -270,0 +343,21 @@ void handle_events() {
++    const bool open_settings = config_open_requested.exchange(false, std::memory_order_acq_rel);
++    const bool toggle_settings = r4_toggle_requested.exchange(false, std::memory_order_acq_rel);
++    if (open_settings || toggle_settings) {
++        const auto context = recompui::config::get_config_context_id();
++        if (recompui::is_context_shown(context) && !open_settings) {
++            recompui::config::close();
++
++        }
++        else if (!recompui::is_context_shown(context)) {
++            recompui::config::open();
++
++        }
++    }
++
++    if (recompui::config::graphics::visual_enhancements_ready()) {
++        if (visual_toggle_button.consume_press()) {
++            recompui::config::graphics::toggle_visual_enhancements();
++        }
++    }
++    recompui::config::graphics::refresh_visual_enhancement_status();
++
+diff --git a/recompinput/src/input_state.cpp b/recompinput/src/input_state.cpp
+index 03ed871..0a651d8 100644
+--- a/recompinput/src/input_state.cpp
++++ b/recompinput/src/input_state.cpp
+@@ -9,0 +10,2 @@
++#include "recompinput/relative_delta_frame.h"
++#include "recompinput/wheel_button_frame.h"
+@@ -21 +23 @@ static struct {
+-    std::atomic_int32_t mouse_wheel_pos = 0;
++    WheelButtonFrame mouse_wheel;
+@@ -26 +27,0 @@ static struct {
+-    std::array<float, 2> mouse_delta{};
+@@ -28 +29 @@ static struct {
+-    std::array<float, 2> pending_mouse_delta{};
++    RelativeDeltaFrame mouse_delta{};
+@@ -47 +48 @@ void recompinput::poll_inputs() {
+-            (void)id; // Avoid unused variable warning.
++            (void)id;
+@@ -56 +56,0 @@ void recompinput::poll_inputs() {
+-    // Read the deltas while resetting them to zero.
+@@ -66,2 +66,2 @@ void recompinput::poll_inputs() {
+-        InputState.mouse_delta = InputState.pending_mouse_delta;
+-        InputState.pending_mouse_delta = { 0.0f, 0.0f };
++        InputState.mouse_delta.begin_frame();
++        InputState.mouse_wheel.begin_frame(!game_input_disabled());
+@@ -80 +79,0 @@ static float smoothstep(float from, float to, float amount) {
+-// Update rumble to attempt to mimic the way n64 rumble ramps up and falls off
+@@ -87 +85,0 @@ void recompinput::update_rumble() {
+-        // Skip setting rumble for controllers that failed to rumble previously.
+@@ -97 +94,0 @@ void recompinput::update_rumble() {
+-    // Skip rumble processing if the game doesn't have a rumble strength option. 
+@@ -106 +103 @@ void recompinput::update_rumble() {
+-        // Note: values are not accurate! just approximations based on feel
++
+@@ -119 +116 @@ void recompinput::update_rumble() {
+-        uint32_t duration = 1000000; // Dummy duration value that lasts long enough to matter as the game will reset rumble on its own.
++        uint32_t duration = 1000000;
+@@ -145 +142,2 @@ bool controller_button_state(int controller_num, int32_t input_id) {
+-                    ret |= SDL_GameControllerGetButton(controller, button);
++                    ret = ret ||
++                        SDL_GameControllerGetButton(controller, button) != 0;
+@@ -151 +149,2 @@ bool controller_button_state(int controller_num, int32_t input_id) {
+-                    ret |= SDL_GameControllerGetButton(player.controller, button);
++                    ret = SDL_GameControllerGetButton(
++                        player.controller, button) != 0;
+@@ -176 +174,0 @@ float controller_axis_state(int controller_num, int32_t input_id, bool allow_sup
+-                // Check if this input is a right analog axis and suppress it accordingly.
+@@ -208 +206 @@ bool recompinput::should_override_keystate(SDL_Scancode key, SDL_Keymod mod) {
+-    // Override Enter when Alt is held.
++
+@@ -217,0 +216,7 @@ bool recompinput::should_override_keystate(SDL_Scancode key, SDL_Keymod mod) {
++static bool mouse_button_state(int32_t input_id) {
++    if (input_id < 1 || input_id > 32) {
++        return false;
++    }
++    return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON(input_id)) != 0;
++}
++
+@@ -233,2 +238,3 @@ float recompinput::get_input_analog(int controller_num, const InputField& field)
+-        // TODO mouse support
+-        return 0.0f;
++        return mouse_button_state(field.input_id) ? 1.0f : 0.0f;
++    case InputType::MouseWheel:
++        return InputState.mouse_wheel.pressed(field.input_id) ? 1.0f : 0.0f;
+@@ -237,0 +244 @@ float recompinput::get_input_analog(int controller_num, const InputField& field)
++    return false;
+@@ -261 +268 @@ bool recompinput::get_input_digital(int controller_num, const InputField& field)
+-        // TODO adjustable threshold
++
+@@ -264,2 +271,3 @@ bool recompinput::get_input_digital(int controller_num, const InputField& field)
+-        // TODO mouse support
+-        return false;
++        return mouse_button_state(field.input_id);
++    case InputType::MouseWheel:
++        return InputState.mouse_wheel.pressed(field.input_id);
+@@ -268,0 +277 @@ bool recompinput::get_input_digital(int controller_num, const InputField& field)
++    return false;
+@@ -310 +319 @@ void recompinput::get_mouse_deltas(float* x, float* y) {
+-    std::array<float, 2> cur_mouse_delta = InputState.mouse_delta;
++    const std::array<float, 2> cur_mouse_delta = InputState.mouse_delta.value();
+@@ -365 +373,0 @@ void recompinput::set_right_analog_suppressed(bool suppressed) {
+-// Disable input if any menu that blocks input is open.
+@@ -370 +377,0 @@ bool recompinput::game_input_disabled() {
+-// Disable all input if an input is being polled or currently binding.
+@@ -390,0 +398,63 @@ SDL_GameController *recompinput::get_controller_from_joystick_id(SDL_JoystickID
++SDL_GameController *recompinput::register_controller_device(int device_index) {
++    if (device_index < 0 || SDL_IsGameController(device_index) != SDL_TRUE) {
++        return nullptr;
++    }
++
++    SDL_GameController *controller = SDL_GameControllerOpen(device_index);
++    if (controller == nullptr) {
++        std::fprintf(stderr,
++            "JFC_CONTROLLER open_failed device=%d error=%s\n",
++            device_index, SDL_GetError());
++        return nullptr;
++    }
++
++    SDL_Joystick *joystick = SDL_GameControllerGetJoystick(controller);
++    const SDL_JoystickID joystick_id = joystick != nullptr
++        ? SDL_JoystickInstanceID(joystick)
++        : -1;
++    if (joystick_id < 0) {
++        std::fprintf(stderr,
++            "JFC_CONTROLLER invalid_instance device=%d error=%s\n",
++            device_index, SDL_GetError());
++        SDL_GameControllerClose(controller);
++        return nullptr;
++    }
++
++    {
++        std::lock_guard lock{ InputState.controllers_mutex };
++        const auto existing = InputState.controller_states.find(joystick_id);
++        if (existing != InputState.controller_states.end() &&
++            existing->second.controller != nullptr) {
++            SDL_GameController *registered = existing->second.controller;
++
++            SDL_GameControllerClose(controller);
++            return registered;
++        }
++
++        ControllerState &state = InputState.controller_states[joystick_id];
++        state.controller = controller;
++    }
++
++    const char *name = SDL_GameControllerName(controller);
++    const char *path = SDL_JoystickPath(joystick);
++
++    return controller;
++}
++
++size_t recompinput::discover_connected_controllers() {
++    const int device_count = SDL_NumJoysticks();
++    size_t registered = 0;
++    for (int device_index = 0; device_index < device_count; ++device_index) {
++        if (register_controller_device(device_index) != nullptr) {
++            ++registered;
++        }
++    }
++
++    return registered;
++}
++
++size_t recompinput::get_registered_controller_count() {
++    std::lock_guard lock{ InputState.controllers_mutex };
++    return InputState.controller_states.size();
++}
++
+@@ -391,0 +462,3 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
++    if (controller == nullptr || joystick_id < 0) {
++        return;
++    }
+@@ -393 +466 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
+-    ControllerState& state = InputState.controller_states[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller))];
++    ControllerState& state = InputState.controller_states[joystick_id];
+@@ -398,2 +471,13 @@ void recompinput::remove_controller_state(SDL_JoystickID joystick_id) {
+-    std::lock_guard lock{ InputState.controllers_mutex };
+-    InputState.controller_states.erase(joystick_id);
++    SDL_GameController *controller = nullptr;
++    {
++        std::lock_guard lock{ InputState.controllers_mutex };
++        const auto existing = InputState.controller_states.find(joystick_id);
++        if (existing == InputState.controller_states.end()) {
++            return;
++        }
++        controller = existing->second.controller;
++        InputState.controller_states.erase(existing);
++    }
++    if (controller != nullptr) {
++        SDL_GameControllerClose(controller);
++    }
+@@ -411,2 +495 @@ void recompinput::add_mouse_deltas(float delta_x, float delta_y) {
+-    InputState.pending_mouse_delta[0] += delta_x;
+-    InputState.pending_mouse_delta[1] += delta_y;
++    InputState.mouse_delta.add(delta_x, delta_y);
+@@ -415 +498,2 @@ void recompinput::add_mouse_wheel_delta(int32_t delta) {
+-    InputState.mouse_wheel_pos.fetch_add(delta);
++    std::lock_guard lock{ InputState.pending_input_mutex };
++    InputState.mouse_wheel.add(delta);
+diff --git a/recompinput/src/input_types.cpp b/recompinput/src/input_types.cpp
+index c6786e6..cfb2ee9 100644
+--- a/recompinput/src/input_types.cpp
++++ b/recompinput/src/input_types.cpp
+@@ -123,2 +122,0 @@ static std::string controller_button_to_string(SDL_GameControllerButton button)
+-        return PF_GAMEPAD_L4;
+-    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_PADDLE2:
+@@ -125,0 +124,2 @@ static std::string controller_button_to_string(SDL_GameControllerButton button)
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_PADDLE2:
++        return PF_GAMEPAD_L4;
+@@ -127,2 +126,0 @@ static std::string controller_button_to_string(SDL_GameControllerButton button)
+-        return PF_GAMEPAD_L5;
+-    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_PADDLE4:
+@@ -129,0 +128,2 @@ static std::string controller_button_to_string(SDL_GameControllerButton button)
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_PADDLE4:
++        return PF_GAMEPAD_L5;
+@@ -139 +139 @@ static std::unordered_map<SDL_Scancode, std::string> scancode_codepoints{
+-    // NOTE: UP and RIGHT are swapped with promptfont.
++
+@@ -229,0 +230,23 @@ static std::string keyboard_input_to_string(SDL_Scancode key) {
++static std::string mouse_button_to_string(int32_t button) {
++    switch (button) {
++    case SDL_BUTTON_LEFT:
++        return PF_MOUSE_1;
++    case SDL_BUTTON_RIGHT:
++        return PF_MOUSE_2;
++    case SDL_BUTTON_MIDDLE:
++        return PF_MOUSE_3;
++    case SDL_BUTTON_X1:
++        return PF_MOUSE_4;
++    case SDL_BUTTON_X2:
++        return PF_MOUSE_5;
++    case 6:
++        return PF_MOUSE_6;
++    case 7:
++        return PF_MOUSE_7;
++    case 8:
++        return PF_MOUSE_8;
++    default:
++        return recompinput::unknown_device_input;
++    }
++}
++
+@@ -248,2 +271 @@ static std::string controller_axis_to_string(int axis) {
+-        //! Does not render correctly. Have not encountered any unknown axis yet.
+-        // return "Axis " + std::to_string(actual_axis) + (positive ? '+' : '-');
++
+@@ -262,0 +285,4 @@ std::string recompinput::InputField::to_string() const {
++    case InputType::Mouse:
++        return mouse_button_to_string(input_id);
++    case InputType::MouseWheel:
++        return input_id == 1 ? "Wheel Up" : input_id == -1 ? "Wheel Down" : unknown_device_input;
+diff --git a/recompui/include/recompui/config.h b/recompui/include/recompui/config.h
+index 38b84f5..db3144d 100644
+--- a/recompui/include/recompui/config.h
++++ b/recompui/include/recompui/config.h
+@@ -21 +21 @@ namespace recompui {
+-        
++
+@@ -51 +51 @@ namespace recompui {
+-    
++
+@@ -61,0 +62,2 @@ namespace recompui {
++                inline const std::string lighting_option = "lighting_option";
++                inline const std::string texture_option = "texture_option";
+@@ -65 +67 @@ namespace recompui {
+-    
++
+@@ -68,0 +71,3 @@ namespace recompui {
++            bool visual_enhancements_ready();
++            void toggle_visual_enhancements();
++            void refresh_visual_enhancement_status();
+@@ -87,9 +91,0 @@ namespace recompui {
+-        /**
+-         * @brief Adds a new tab to the config modal, and creates and returns a `Config` for you to add options to.
+-         * 
+-         * Once `recompui::config::finalize()` is called, the config will be loaded from disk (`<id>.json`), or this json will be created from the default values.
+-         * 
+-         * @param name  The name of the config + tab.
+-         * @param id  The ID of the config + tab. Also used as the filename for saving/loading (e.g. `<id>.json`).
+-         * @param requires_confirmation  Whether the tab requires confirmation before closing. Adds an Apply button at the footer, and if the user tries to switch tabs or close the modal, they will be prompted to confirm or cancel changes.
+-         */
+@@ -98,9 +93,0 @@ namespace recompui {
+-        /**
+-         * @brief Adds a new tab to the config modal. This is for manually rendering your own tab's UI.
+-         * 
+-         * @param name The name of the tab.
+-         * @param id The ID of the tab. Can be used to hide/show the tab later.
+-         * @param create_contents The function to create the body of the tab.
+-         * @param can_close Gets called when the user tries to either close the modal or switch to a different tab.
+-         * @param on_close The function to call when the tab is closed.
+-         */
+@@ -121,2 +107,0 @@ namespace recompui {
+-        // Prefab config tabs.
+-        // TODO: Explain how to hide/show options
+@@ -129,2 +113,0 @@ namespace recompui {
+-        // Must be called after all tabs have been created.
+-        // This loads all of the user's config files from disk.
+@@ -133 +115,0 @@ namespace recompui {
+-        // Sets a tab with the given ID to be hidden or visible. Can be used for debug tabs, or hidden configs.
+@@ -140,2 +121,0 @@ namespace recompui {
+-        // Get the config modal instance. nullptr until created with init_modal() internally.
+-        // Will throw an error if it hasn't been created yet.
+@@ -146 +125,0 @@ namespace recompui {
+-        // Get any added config by ID.
+@@ -152 +130,0 @@ namespace recompui {
+-        // Internal use only.
+@@ -157 +135 @@ namespace recompui {
+-#endif // _RECOMP_UI_CONFIG_H_
++#endif
+diff --git a/recompui/include/recompui/program_config.h b/recompui/include/recompui/program_config.h
+index 03f5048..3000c3f 100644
+--- a/recompui/include/recompui/program_config.h
++++ b/recompui/include/recompui/program_config.h
+@@ -9,0 +10 @@ namespace recompui {
++        void set_build_label(const std::string& label);
+@@ -11,0 +13 @@ namespace recompui {
++        const std::string &get_build_label();
+diff --git a/recompui/include/recompui/renderer.h b/recompui/include/recompui/renderer.h
+index 33f79ab..99db515 100644
+--- a/recompui/include/recompui/renderer.h
++++ b/recompui/include/recompui/renderer.h
+@@ -26,0 +27 @@ namespace recompui {
++            ultramodern::renderer::GraphicsConfig get_applied_config() const override;
+@@ -29 +30,16 @@ namespace recompui {
+-            void send_dl(const OSTask *task) override;
++            void enable_cpu_framebuffer_completion() override;
++            void complete_cpu_framebuffer(uint32_t address, std::span<const uint32_t> effects) override;
++            bool cpu_framebuffer_pending() const override;
++            bool prepare_render_admission(bool auxiliaryTask) override;
++            void send_dl(const OSTask *task, const uint8_t *task_data,
++                uint64_t triggerMessageEnqueueTimestampNs,
++                uint64_t triggerMessageDequeueTimestampNs,
++                uint64_t receiverScheduledTimestampNs,
++                uint64_t gameThreadResumeSignalTimestampNs,
++                uint64_t gameThreadResumeWakeTimestampNs,
++                uint32_t triggerMessageQueue,
++                uint32_t triggerMessageValue,
++                uint64_t submittedTimestampNs,
++                bool representsGameFrame, uint32_t framebufferAddress,
++                const ultramodern::renderer::CameraSamples& cameras,
++                void (*task_complete)(void*), void* completion_context) override;
+@@ -31,0 +48,3 @@ namespace recompui {
++            void run_state_operation(void (*operation)(void*), void* context) override;
++            std::vector<uint8_t> capture_state() override;
++            std::unique_ptr<ultramodern::renderer::PreparedRendererState> prepare_state(const std::vector<uint8_t>& image) override;
+@@ -39,0 +59 @@ namespace recompui {
++            bool builtin_texture_pack_enabled = false;
+@@ -40,0 +61 @@ namespace recompui {
++            bool state_operation_active = false;
+@@ -42,0 +64,4 @@ namespace recompui {
++            bool reload_texture_packs();
++            bool apply_builtin_texture_mode(
++                ultramodern::renderer::TextureMode requested_mode);
++            ultramodern::renderer::GraphicsConfig applied_config{};
+@@ -51,0 +77,4 @@ namespace recompui {
++        void set_builtin_texture_pack_path(std::filesystem::path path);
++
++        void set_base_texture_pack_path(std::filesystem::path path);
++
+@@ -58,2 +86,0 @@ namespace recompui {
+-        // Texture pack enable option. Must be an enum with two options.
+-        // The first option is treated as disabled and the second option is treated as enabled.
+diff --git a/recompui/lib/FindFreetype.cmake b/recompui/lib/FindFreetype.cmake
+index bbb8d6a..24d14c3 100644
+--- a/recompui/lib/FindFreetype.cmake
++++ b/recompui/lib/FindFreetype.cmake
+@@ -2,2 +2,2 @@ set(FREETYPE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binari
+-set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release static/vs2015-2022/win64/freetype.lib")
+-add_library(Freetype::Freetype STATIC IMPORTED)
++set(FREETYPE_LIBRARIES "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release dll/win64/freetype.lib")
++add_library(Freetype::Freetype SHARED IMPORTED)
+@@ -5 +5,2 @@ set_target_properties(Freetype::Freetype PROPERTIES
+-	IMPORTED_LOCATION ${FREETYPE_LIBRARIES}
++	IMPORTED_IMPLIB ${FREETYPE_LIBRARIES}
++	IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release dll/win64/freetype.dll"
+diff --git a/recompui/src/base/ui_input_edge.hpp b/recompui/src/base/ui_input_edge.hpp
+new file mode 100644
+index 0000000..ef1057f
+--- /dev/null
++++ b/recompui/src/base/ui_input_edge.hpp
+@@ -0,0 +1,53 @@
++#ifndef RECOMPUI_UI_INPUT_EDGE_HPP
++#define RECOMPUI_UI_INPUT_EDGE_HPP
++
++#include <array>
++#include <cstdint>
++
++namespace recompui {
++
++struct UiInputEdge {
++    bool press(int key, uint64_t source, bool repeat = false) {
++        if (repeat || key == 0) {
++            return true;
++        }
++
++        bool action_held = false;
++        Source* free = nullptr;
++        for (auto& held : sources) {
++            if (held.key == key) {
++                action_held = true;
++                if (held.source == source) {
++                    return false;
++                }
++            }
++            if (free == nullptr && held.key == 0) {
++                free = &held;
++            }
++        }
++        if (free != nullptr) {
++            *free = {key, source};
++        }
++        return !action_held;
++    }
++
++    void release(int key, uint64_t source) {
++        for (auto& held : sources) {
++            if (held.key == key && held.source == source) {
++                held = {};
++                return;
++            }
++        }
++    }
++
++private:
++    struct Source {
++        int key = 0;
++        uint64_t source = 0;
++    };
++    std::array<Source, 32> sources{};
++};
++
++}
++
++#endif
+diff --git a/recompui/src/base/ui_launcher.cpp b/recompui/src/base/ui_launcher.cpp
+index 6de7a94..ab2f62e 100644
+--- a/recompui/src/base/ui_launcher.cpp
++++ b/recompui/src/base/ui_launcher.cpp
+@@ -26 +25,0 @@ namespace Constants {
+-// TODO: Store somewhere else and have base game register/initialize.
+@@ -33 +31,0 @@ static std::string generate_thumbnail_src_for_game(const std::string& game_id) {
+-// TODO: Used in multiple places, should be combined.
+@@ -54 +52 @@ namespace recompui {
+-        
++
+@@ -125,2 +123,2 @@ namespace recompui {
+-                } // body_container
+-            } // this
++                }
++            }
+@@ -147 +145 @@ namespace recompui {
+-        //! Hack: Can't focus until a delayed update from when the options are cleared. Options get cleared then this is set to true.
++
+@@ -149 +147 @@ namespace recompui {
+-        //! Hack: If it isn't queued it just won't scroll into view when reopening the menu.
++
+@@ -165 +163 @@ namespace recompui {
+-                        //! Hack: Wait two updates.
++
+@@ -244 +241,0 @@ namespace recompui {
+-            // header
+@@ -249 +245,0 @@ namespace recompui {
+-            // footer
+@@ -299 +294,0 @@ namespace recompui {
+-            recomp::start_game(this->game_id, this->cur_game_mode_id);
+@@ -300,0 +296 @@ namespace recompui {
++            recomp::start_game(this->game_id, this->cur_game_mode_id);
+@@ -324 +320 @@ namespace recompui {
+-            
++
+@@ -345 +340,0 @@ namespace recompui {
+-            // Failsafe if previous mode wasn't found (mod removed or id changed).
+@@ -365 +359,0 @@ namespace recompui {
+-            //! Hack: Can't make options until next update otherwise focus doesn't work.
+@@ -423,0 +418,6 @@ namespace recompui {
++                    case recomp::RomValidationError::IncorrectRomSize:
++                        recompui::message_box("This ROM has the wrong size. It may be truncated or modified.");
++                        break;
++                    case recomp::RomValidationError::IncorrectByteOrder:
++                        recompui::message_box("This ROM has an unsupported byte order. Use a big-endian .z64 image.");
++                        break;
+@@ -432 +432 @@ namespace recompui {
+-                                "This ROM is the correct game, but the wrong version.\nThis project requires the NTSC-U N64 version of the game.");
++                                "This ROM is the correct game, but it is the wrong version or has been modified.\nThis project requires the exact supported N64 release.");
+@@ -463 +462,0 @@ namespace recompui {
+-                    recomp::start_game(this->game_id, {});
+@@ -464,0 +464 @@ namespace recompui {
++                    recomp::start_game(this->game_id, {});
+@@ -615 +615 @@ namespace recompui {
+-    
++
+@@ -619 +619 @@ namespace recompui {
+-    
++
+@@ -637 +637 @@ namespace recompui {
+-    
++
+@@ -658 +657,0 @@ namespace recompui {
+-
+diff --git a/recompui/src/base/ui_state.cpp b/recompui/src/base/ui_state.cpp
+index 277a421..a920995 100644
+--- a/recompui/src/base/ui_state.cpp
++++ b/recompui/src/base/ui_state.cpp
+@@ -27,0 +28 @@
++#include "base/ui_input_edge.hpp"
+@@ -81,2 +81,0 @@ static bool can_focus(Rml::Element* element) {
+-//! Copied from lib\RmlUi\Source\Core\Elements\ElementLabel.cpp
+-// Get the first descending element whose tag name matches one of tags.
+@@ -106 +105 @@ Rml::Element* get_target(Rml::ElementDocument* document, Rml::Element* element)
+-    // Labels can have targets, so check if this element is a label.
++
+@@ -126 +125 @@ Rml::Element* get_target(Rml::ElementDocument* document, Rml::Element* element)
+-    // Return the element directly if no target exists.
++
+@@ -146 +145 @@ namespace recompui {
+-            // Check if a listener has already been made for the full event string and return it if so.
++
+@@ -152 +150,0 @@ namespace recompui {
+-            // No existing listener, so check if a handler has been registered for this event type and create a listener for it if so.
+@@ -157 +155 @@ namespace recompui {
+-                // A handler was found, create a listener and return it.
++
+@@ -184 +182 @@ Rml::Element* find_autofocus_element(Rml::Element* start) {
+-        // Track the first element that was found to know when we've wrapped around.
++
+@@ -188 +186 @@ Rml::Element* find_autofocus_element(Rml::Element* start) {
+-        // Stop searching if we found the first element again.
++
+@@ -191 +189 @@ Rml::Element* find_autofocus_element(Rml::Element* start) {
+-                // Return the first tab element as there was nothing marked with autofocus.
++
+@@ -239 +236,0 @@ public:
+-        // Apply the hack to replace RmlUi's default color parser with one that conforms to HTML5 alpha parsing for SASS compatibility
+@@ -244 +241 @@ public:
+-        
++
+@@ -292 +289 @@ public:
+-            // controller newly interacted with
++
+@@ -299 +296 @@ public:
+-            // mouse newly interacted with
++
+@@ -319 +315,0 @@ public:
+-        // TODO is this needed?
+@@ -340 +335,0 @@ public:
+-        // If non mouse input was used and nothing is focused then focus on the last hovered element or the autofocus element.
+@@ -346 +341 @@ public:
+-                // Check if not focused or focused element is not focusable.
++
+@@ -364 +358,0 @@ public:
+-        // If there was mouse motion, get the current hovered element (or its target if it points to one) and focus that if applicable.
+@@ -384,7 +377,0 @@ public:
+-        // auto& on_show = context.on_show;
+-        // if (on_show) {
+-        //     context.open();
+-        //     on_show();
+-        //     context.close();
+-        // }
+-
+@@ -431 +418 @@ public:
+-    
++
+@@ -457 +444 @@ public:
+-        // Iterate backwards and stop at the first context that takes input.
++
+@@ -467 +454 @@ public:
+-        // Iterate backwards and stop at the first context that takes input.
++
+@@ -477 +464 @@ public:
+-        // Iterate backwards and stop at the first context that takes input.
++
+@@ -498 +484,0 @@ std::recursive_mutex ui_state_mutex{};
+-// TODO make this not be global
+@@ -509 +495 @@ inline const std::string read_file_to_string(std::filesystem::path path) {
+-    return ss.str(); 
++    return ss.str();
+@@ -553 +538,0 @@ bool recompui::menu_action_mapping::is_sdl_input_fake_mapped(int32_t sdl_key) {
+-// Extends RmlSDL::ConvertKey for some extra mapping slots
+@@ -607 +591,0 @@ int cont_button_to_key(SDL_ControllerButtonEvent& button) {
+-
+@@ -649 +633 @@ void recompui::activate_mouse() {
+-void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer* swap_chain_framebuffer) {
++bool draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer* swap_chain_framebuffer) {
+@@ -653 +636,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    // Return early if the ui context has been destroyed already.
+@@ -655 +638 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-        return;
++        return false;
+@@ -658 +640,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    // Return to the launcher if no menu is open and the game isn't started.
+@@ -675 +657 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    using clock = std::chrono::system_clock;
++    using clock = std::chrono::steady_clock;
+@@ -677 +658,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    // TODO move these into a more appropriate place.
+@@ -681,0 +663 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
++    static recompui::UiInputEdge discrete_edges;
+@@ -685,0 +668,2 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
++        bool suppress_rml_event = false;
++        bool suppress_discrete_action = false;
+@@ -689 +673,41 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-        // Handle up button events even when input is disabled to avoid missing them during binding.
++        if (cur_event.type == SDL_EventType::SDL_CONTROLLERBUTTONDOWN) {
++            const int sdl_key = cont_button_to_key(cur_event.cbutton);
++            suppress_discrete_action = sdl_key != 0 &&
++                !discrete_edges.press(
++                    static_cast<int>(convert_sdl_to_rml(sdl_key)),
++                    (uint64_t{1} << 63) |
++                        (static_cast<uint64_t>(
++                            static_cast<uint32_t>(cur_event.cbutton.which)) << 32) |
++                        cur_event.cbutton.button);
++        }
++        else if (cur_event.type == SDL_EventType::SDL_KEYDOWN) {
++            const auto rml_key = convert_sdl_to_rml(cur_event.key.keysym.sym);
++            const bool navigation_key =
++                rml_key == Rml::Input::KI_UP ||
++                rml_key == Rml::Input::KI_DOWN ||
++                rml_key == Rml::Input::KI_LEFT ||
++                rml_key == Rml::Input::KI_RIGHT ||
++                recompui::menu_action_mapping::menu_action_from_rml_key(rml_key) !=
++                    recompui::MenuAction::None;
++            suppress_discrete_action = navigation_key &&
++                !discrete_edges.press(
++                    static_cast<int>(rml_key),
++                    static_cast<uint32_t>(cur_event.key.keysym.scancode),
++                    cur_event.key.repeat != 0);
++        }
++
++        if (cur_event.type == SDL_EventType::SDL_CONTROLLERBUTTONUP) {
++            const int sdl_key = cont_button_to_key(cur_event.cbutton);
++            discrete_edges.release(
++                static_cast<int>(convert_sdl_to_rml(sdl_key)),
++                (uint64_t{1} << 63) |
++                    (static_cast<uint64_t>(
++                        static_cast<uint32_t>(cur_event.cbutton.which)) << 32) |
++                    cur_event.cbutton.button);
++        }
++        else if (cur_event.type == SDL_EventType::SDL_KEYUP) {
++            discrete_edges.release(
++                static_cast<int>(convert_sdl_to_rml(cur_event.key.keysym.sym)),
++                static_cast<uint32_t>(cur_event.key.keysym.scancode));
++        }
++
+@@ -699 +723 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-            // Implement some additional behavior for specific events on top of what RmlUi normally does with them.
++
+@@ -714 +737,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-                // if controller is the primary input, don't use mouse movement to allow cursor to reactivate
+@@ -719 +742 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-            // fallthrough
++
+@@ -725 +748 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-                
++
+@@ -730 +753 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-                
++
+@@ -733 +756,2 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-                if (context_capturing_input && sdl_key) {
++                if (context_capturing_input && sdl_key &&
++                        !suppress_discrete_action) {
+@@ -742,2 +766,5 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-            case SDL_EventType::SDL_KEYDOWN:
+-                // Exclude the ESC key from triggering keyboard mode.
++            case SDL_EventType::SDL_KEYDOWN: {
++                if (context_capturing_input && suppress_discrete_action) {
++                    suppress_rml_event = true;
++                }
++
+@@ -754 +780,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-
+@@ -755,0 +782 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
++            }
+@@ -789 +816 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-                    // Stop pressing the current key if the axis that was released was the one triggering key presses.
++
+@@ -798 +824,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-            // Send the event to RmlUi if this type of event is being captured.
+@@ -804 +830 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-            else {
++            else if (!suppress_rml_event) {
+@@ -811,2 +837,2 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-        // If the config menu isn't open and the game has been started and either the escape key or select button are pressed, open the config menu.
+-        if (!config_was_open && ultramodern::is_game_started()) {
++        if (!suppress_discrete_action && !config_was_open &&
++                ultramodern::is_game_started()) {
+@@ -844 +870 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    } // end dequeue event loop
++    }
+@@ -846 +871,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    // Handle controller key repeats.
+@@ -862 +887,2 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-    if (recompui::is_any_context_shown()) {
++    const bool drewRenderHookCommands = recompui::is_any_context_shown();
++    if (drewRenderHookCommands) {
+@@ -872 +897,0 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
+-        // Scale the UI based on the window size with 1080 vertical resolution as the reference point.
+@@ -889,0 +915,2 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
++
++    return drewRenderHookCommands;
+@@ -916 +942,0 @@ void recompui::show_context(ContextId context, std::string_view param) {
+-        // TODO call the context's on_show callback with the param.
+@@ -1018 +1044 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-    // Prevent mod installation after the game has started.
++
+@@ -1028,2 +1054 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-    // TODO: Needs a progress callback and a prompt for every mod that needs to be confirmed to be overwritten.
+-    // TODO: Run this on a background thread and use the callbacks to advance the state instead of blocking.
++
+@@ -1052 +1077 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-            // Get the mod details for the current mod at this file path.
++
+@@ -1091 +1116 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-        // TODO show errors
++
+@@ -1109 +1133,0 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-        // open prompt where confirm finishes the mod installation with the overwritten files
+@@ -1123 +1147 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-                // TODO show errors
++
+@@ -1128 +1152 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+-                // TODO show errors
++
+diff --git a/recompui/src/config/ui_config.cpp b/recompui/src/config/ui_config.cpp
+index 6c84c05..dbc9d02 100644
+--- a/recompui/src/config/ui_config.cpp
++++ b/recompui/src/config/ui_config.cpp
+@@ -1,0 +2 @@
++#include "recompui/program_config.h"
+@@ -3,0 +5 @@
++#include "elements/ui_label.h"
+@@ -65 +67 @@ namespace recompui {
+-            // Create contents
++
+@@ -69 +71 @@ namespace recompui {
+-            // Can close
++
+@@ -99 +101 @@ namespace recompui {
+-            // On close
++
+@@ -156,0 +159,10 @@ namespace recompui {
++        const std::string &build_label_text = programconfig::get_build_label();
++        if (!build_label_text.empty()) {
++            auto build_label = config_modal->modal_root_context.create_element<Label>(
++                header_right, build_label_text, LabelStyle::Annotation);
++            build_label->set_color(theme::color::TextA80);
++            build_label->set_white_space(WhiteSpace::Nowrap);
++            build_label->set_margin_right(12.0f);
++            build_label->set_pointer_events(PointerEvents::None);
++            build_label->set_debug_id("settings_build_label");
++        }
+diff --git a/recompui/src/config/ui_config_tab_general.cpp b/recompui/src/config/ui_config_tab_general.cpp
+index 296ce0e..2b5d861 100644
+--- a/recompui/src/config/ui_config_tab_general.cpp
++++ b/recompui/src/config/ui_config_tab_general.cpp
+@@ -41 +41 @@ namespace config {
+-    
++
+@@ -53 +53 @@ namespace config {
+-    
++
+@@ -57 +57 @@ namespace config {
+-    
++
+@@ -61 +61 @@ namespace config {
+-    
++
+@@ -65 +65 @@ namespace config {
+-    
++
+@@ -69 +69 @@ namespace config {
+-    
++
+@@ -73 +73 @@ namespace config {
+-    
++
+@@ -87 +87 @@ namespace config {
+-            true // hidden by default
++            true
+@@ -121 +121 @@ namespace config {
+-                is_steam_deck() ? 50.0 : 0.0 // steam deck overrides default to 50%
++                100.0
+@@ -144,2 +144,2 @@ namespace config {
+-} // namespace config
+-} // namespace recompui
++}
++}
+diff --git a/recompui/src/config/ui_config_tab_graphics.cpp b/recompui/src/config/ui_config_tab_graphics.cpp
+index 4fdf81f..17a4751 100644
+--- a/recompui/src/config/ui_config_tab_graphics.cpp
++++ b/recompui/src/config/ui_config_tab_graphics.cpp
+@@ -3,0 +4 @@
++#include "visual_enhancement_toggle.hpp"
+@@ -5,0 +7,3 @@
++#include <cstdio>
++#include <optional>
++
+@@ -70 +74 @@ namespace recompui {
+-            // {ultramodern::renderer::AspectRatio::Manual, "Manual"},
++
+@@ -77 +81 @@ namespace recompui {
+-            // {ultramodern::renderer::Antialiasing::MSAA8X, "MSAA8X"},
++
+@@ -81,2 +85,2 @@ namespace recompui {
+-            {ultramodern::renderer::RefreshRate::Original, "Original"},
+-            {ultramodern::renderer::RefreshRate::Display, "Display"},
++            {ultramodern::renderer::RefreshRate::Original, "Off (Original)"},
++            {ultramodern::renderer::RefreshRate::Display, "Display Refresh"},
+@@ -91,0 +96,10 @@ namespace recompui {
++        static EnumOptionVector lighting_options = {
++            {ultramodern::renderer::LightingMode::Original, "Original"},
++
++        };
++
++        static EnumOptionVector texture_options = {
++            {ultramodern::renderer::TextureMode::Original, "Off"},
++            {ultramodern::renderer::TextureMode::Enhanced, "On"},
++        };
++
+@@ -139 +153 @@ namespace recompui {
+-    
++
+@@ -156 +170,2 @@ namespace recompui {
+-                "Sets the game's output framerate. This option does not affect gameplay."
++                "Generates presentation frames between original game updates. "
++                "This smooths motion without changing gameplay timing."
+@@ -159 +174 @@ namespace recompui {
+-                "Note: If you have issues with <recomp-color primary>Display</recomp-color> mode while using an external frame limiter, use <recomp-color primary>Manual</recomp-color> mode instead and configure it to that same frame limit."
++                "Note: If you have issues with <recomp-color primary>Display Refresh</recomp-color> while using an external frame limiter, use <recomp-color primary>Manual</recomp-color> and configure it to that same frame limit."
+@@ -166 +181 @@ namespace recompui {
+-            ultramodern::renderer::GraphicsConfig new_config;
++            ultramodern::renderer::GraphicsConfig new_config{};
+@@ -175,0 +191,2 @@ namespace recompui {
++            new_config.lighting_option = get_graphics_enum_value<ultramodern::renderer::LightingMode>(graphics::options::lighting_option);
++            new_config.texture_option = get_graphics_enum_value<ultramodern::renderer::TextureMode>(graphics::options::texture_option);
+@@ -219,0 +237,62 @@ namespace recompui {
++        bool graphics::visual_enhancements_ready() {
++            if (!created_graphics_config) {
++                return false;
++            }
++            const auto applied =
++                ultramodern::renderer::get_applied_graphics_config();
++            const auto requested = ultramodern::renderer::get_graphics_config();
++            return applied.lighting_option == requested.lighting_option &&
++                applied.texture_option == requested.texture_option;
++        }
++
++        void graphics::toggle_visual_enhancements() {
++            recomp::config::Config& config = get_graphics_config();
++            const auto requested = ultramodern::renderer::get_graphics_config();
++            const auto next = next_visual_enhancement_state(
++                requested.lighting_option == ultramodern::renderer::LightingMode::Modern,
++                requested.texture_option == ultramodern::renderer::TextureMode::Enhanced);
++            config.update_option_value(
++                graphics::options::lighting_option,
++                static_cast<uint32_t>(next.lighting
++                    ? ultramodern::renderer::LightingMode::Modern
++                    : ultramodern::renderer::LightingMode::Original));
++            config.update_option_value(
++                graphics::options::texture_option,
++                static_cast<uint32_t>(next.textures
++                    ? ultramodern::renderer::TextureMode::Enhanced
++                    : ultramodern::renderer::TextureMode::Original));
++            config.apply_option_value(graphics::options::lighting_option);
++            config.apply_option_value(graphics::options::texture_option);
++            const bool saved = config.save_config_json(config.get_json_config());
++
++        }
++
++        void graphics::refresh_visual_enhancement_status() {
++            static std::optional<VisualEnhancementState> last_applied;
++            static std::optional<VisualEnhancementState> last_requested;
++            const auto applied_config =
++                ultramodern::renderer::get_applied_graphics_config();
++            const auto requested_config = ultramodern::renderer::get_graphics_config();
++            const VisualEnhancementState applied{
++                applied_config.lighting_option == ultramodern::renderer::LightingMode::Modern,
++                applied_config.texture_option == ultramodern::renderer::TextureMode::Enhanced};
++            const VisualEnhancementState requested{
++                requested_config.lighting_option == ultramodern::renderer::LightingMode::Modern,
++                requested_config.texture_option == ultramodern::renderer::TextureMode::Enhanced};
++            if (last_applied == applied && last_requested == requested) {
++                return;
++            }
++
++            const bool pending = applied != requested;
++            get_graphics_config().update_option_enum_details(
++                graphics::options::lighting_option,
++                std::string(pending ? "Applying; active: " : "Active: ") +
++                    (applied.lighting ? "Modern" : "Original"));
++            get_graphics_config().update_option_enum_details(
++                graphics::options::texture_option,
++                std::string(pending ? "Applying; active: " : "Active: ") +
++                    (applied.textures ? "On" : "Off"));
++            last_applied = applied;
++            last_requested = requested;
++        }
++
+@@ -276 +355 @@ namespace recompui {
+-    
++
+@@ -280 +359 @@ namespace recompui {
+-    
++
+@@ -289 +368 @@ namespace recompui {
+-                "Sets the horizontal aspect ratio. <recomp-color primary>Original</recomp-color> uses the game's original 4:3 aspect ratio. <recomp-color primary>Expand</recomp-color> will adjust to match the game window's aspect ratio.",
++                "Sets the horizontal aspect ratio. <recomp-color primary>Original</recomp-color> uses the game's original 4:3 aspect ratio. <recomp-color primary>Expand</recomp-color> matches the game window, including ultrawide displays.",
+@@ -304 +383 @@ namespace recompui {
+-                "Framerate",
++                "Frame Interpolation",
+@@ -324,0 +404,16 @@ namespace recompui {
++            config.add_enum_option(
++                graphics::options::lighting_option,
++                "Modern Lighting",
++                "Original Nintendo 64 lighting. Modern lighting is temporarily disabled while materials are reviewed.",
++                lighting_options,
++                ultramodern::renderer::LightingMode::Original
++            );
++
++            config.add_enum_option(
++                graphics::options::texture_option,
++                "Enhanced Textures",
++                "Cleans the original texture banks without moving their features or changing their native transparency. The first launch prepares a local cache from your ROM; textures then stream as needed. Off uses the original textures.",
++                texture_options,
++                ultramodern::renderer::TextureMode::Enhanced
++            );
++
+@@ -341 +436 @@ namespace recompui {
+-                ultramodern::renderer::HUDRatioMode::Clamp16x9
++                ultramodern::renderer::HUDRatioMode::Full
+@@ -365 +460 @@ namespace recompui {
+-} // namespace recompui
++}
+diff --git a/recompui/src/config/visual_enhancement_toggle.hpp b/recompui/src/config/visual_enhancement_toggle.hpp
+new file mode 100644
+index 0000000..1454c38
+--- /dev/null
++++ b/recompui/src/config/visual_enhancement_toggle.hpp
+@@ -0,0 +1,20 @@
++#pragma once
++
++namespace recompui::config::graphics {
++
++struct VisualEnhancementState {
++    bool lighting;
++    bool textures;
++
++    auto operator<=>(const VisualEnhancementState&) const = default;
++};
++
++constexpr VisualEnhancementState next_visual_enhancement_state(
++    bool lighting,
++    bool textures
++) {
++
++    return {lighting, !textures};
++}
++
++}
+diff --git a/recompui/src/renderer/rt64_render_context.cpp b/recompui/src/renderer/rt64_render_context.cpp
+index a7954c7..0c104e4 100644
+--- a/recompui/src/renderer/rt64_render_context.cpp
++++ b/recompui/src/renderer/rt64_render_context.cpp
+@@ -4,0 +5,3 @@
++#include <chrono>
++#include <stdexcept>
++#include <optional>
+@@ -6,0 +10,2 @@
++#include "render/rt64_state_texture.h"
++#include "hle/rt64_save_state.h"
+@@ -11,0 +17 @@
++#include "librecomp/game.hpp"
+@@ -22,0 +29,2 @@ static bool high_precision_fb_enabled = false;
++static std::filesystem::path builtin_texture_pack_path;
++static std::filesystem::path base_texture_pack_path;
+@@ -26,0 +35,5 @@ static uint8_t IMEM[0x1000];
++[[noreturn]] static void invalid_renderer_enum(const char* name) {
++    fprintf(stderr, "Invalid renderer configuration value for %s.\n", name);
++    std::exit(EXIT_FAILURE);
++}
++
+@@ -43,0 +57,2 @@ struct TexturePackUpdateAction {
++    std::optional<std::filesystem::path> builtin_path;
++    std::optional<std::filesystem::path> base_path;
+@@ -86,0 +102 @@ RT64::UserConfiguration::AspectRatio to_rt64(ultramodern::renderer::AspectRatio
++    invalid_renderer_enum("aspect ratio");
+@@ -101,0 +118 @@ RT64::UserConfiguration::Antialiasing to_rt64(ultramodern::renderer::Antialiasin
++    invalid_renderer_enum("antialiasing");
+@@ -114,0 +132 @@ RT64::UserConfiguration::RefreshRate to_rt64(ultramodern::renderer::RefreshRate
++    invalid_renderer_enum("refresh rate");
+@@ -127,0 +146,13 @@ RT64::UserConfiguration::InternalColorFormat to_rt64(ultramodern::renderer::High
++    invalid_renderer_enum("high-precision framebuffer");
++}
++
++RT64::UserConfiguration::LightingMode to_rt64(ultramodern::renderer::LightingMode option) {
++    switch (option) {
++        case ultramodern::renderer::LightingMode::Original:
++            return RT64::UserConfiguration::LightingMode::Original;
++        case ultramodern::renderer::LightingMode::Modern:
++            return RT64::UserConfiguration::LightingMode::Modern;
++        case ultramodern::renderer::LightingMode::OptionCount:
++            return RT64::UserConfiguration::LightingMode::OptionCount;
++    }
++    invalid_renderer_enum("lighting mode");
+@@ -138,0 +170 @@ RT64::EnhancementConfiguration::Presentation::Mode to_rt64(ultramodern::renderer
++    invalid_renderer_enum("presentation mode");
+@@ -178,0 +211 @@ void set_application_user_config(RT64::Application* application, const ultramode
++    application->userConfig.lightingMode = to_rt64(config.lighting_option);
+@@ -224 +256,0 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set up the RT64 application core fields.
+@@ -269 +300,0 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set up the RT64 application configuration fields.
+@@ -273 +304,3 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Create the RT64 application.
++    appConfig.detectDataPath = false;
++    appConfig.dataPath = recomp::get_config_path() / "rt64";
++
+@@ -276,2 +309,2 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set initial user config settings based on the current settings.
+-    auto& cur_config = ultramodern::renderer::get_graphics_config();
++    const auto cur_config = ultramodern::renderer::get_graphics_config();
++    applied_config = cur_config;
+@@ -280 +313 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Force gbi depth branches to prevent LODs from kicking in.
++
+@@ -282 +315 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Scale LODs based on the output resolution.
++
+@@ -284 +317 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set the target presentation mode.
++
+@@ -286 +319 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Pick an API if the user has set an override.
++
+@@ -303 +335,0 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set up the RT64 application.
+@@ -309 +341 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Get the API that RT64 chose.
++
+@@ -316 +347,0 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Set the application's fullscreen state.
+@@ -319,2 +349,0 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+-    // Check if the selected device actually supports MSAA sample positions and MSAA for for the formats that will be used
+-    // and downgrade the configuration accordingly.
+@@ -335,0 +365,4 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
++    if (!apply_builtin_texture_mode(cur_config.texture_option)) {
++        applied_config.texture_option =
++            ultramodern::renderer::TextureMode::Original;
++    }
+@@ -340 +373,44 @@ renderer::RT64Context::~RT64Context() = default;
+-void renderer::RT64Context::send_dl(const OSTask* task) {
++void renderer::RT64Context::send_dl(const OSTask* task, const uint8_t* task_data,
++    uint64_t triggerMessageEnqueueTimestampNs,
++    uint64_t triggerMessageDequeueTimestampNs,
++    uint64_t receiverScheduledTimestampNs,
++    uint64_t gameThreadResumeSignalTimestampNs,
++    uint64_t gameThreadResumeWakeTimestampNs,
++    uint32_t triggerMessageQueue,
++    uint32_t triggerMessageValue,
++    uint64_t submittedTimestampNs,
++    bool representsGameFrame, uint32_t framebufferAddress,
++    const ultramodern::renderer::CameraSamples& cameras,
++    void (*task_complete)(void*), void* completion_context) {
++
++    struct CompletionScope {
++        RT64::State& state;
++        ~CompletionScope() {
++            state.taskCompleteCallback = nullptr;
++            state.taskCompleteContext = nullptr;
++            state.terminalRootFullSync = false;
++            state.displayListFramebufferAddress = UINT32_MAX;
++            state.taskCameraSamples.clear();
++            state.taskCameraSamplesRequired = false;
++        }
++    } completionScope{*app->state};
++    app->state->taskCompleteCallback = task_complete;
++    app->state->taskCompleteContext = completion_context;
++    app->state->terminalRootFullSync = false;
++    if (!app->state->prepareNextWorkload(!representsGameFrame)) return;
++    app->state->displayListFramebufferAddress = framebufferAddress;
++    app->state->taskCameraSamples.clear();
++    app->state->taskCameraSamplesRequired = cameras.complete;
++    for (const auto &source : cameras.entries) {
++        RT64::NativeCameraSample sample;
++        sample.matrixAddress = source.matrixAddress;
++        sample.cameraId = source.cameraId;
++        sample.generation = source.generation;
++        for (uint32_t row = 0; row < 4; ++row) {
++            sample.view[row] = hlslpp::float4(source.view[row * 4], source.view[row * 4 + 1],
++                source.view[row * 4 + 2], source.view[row * 4 + 3]);
++            sample.projection[row] = hlslpp::float4(source.projection[row * 4], source.projection[row * 4 + 1],
++                source.projection[row * 4 + 2], source.projection[row * 4 + 3]);
++        }
++        app->state->taskCameraSamples.push_back(sample);
++    }
+@@ -344 +420,17 @@ void renderer::RT64Context::send_dl(const OSTask* task) {
+-    app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
++    const uint32_t dl_start = task->t.data_ptr & 0x3FFFFFF;
++    const uint32_t dl_end = dl_start + task->t.data_size * sizeof(uint64_t);
++    app->processDisplayLists(
++        app->core.RDRAM,
++        dl_start,
++        dl_end,
++        true,
++        reinterpret_cast<RT64::DisplayList*>(const_cast<uint8_t*>(task_data)),
++        triggerMessageEnqueueTimestampNs,
++        triggerMessageDequeueTimestampNs,
++        receiverScheduledTimestampNs,
++        gameThreadResumeSignalTimestampNs,
++        gameThreadResumeWakeTimestampNs,
++        triggerMessageQueue,
++        triggerMessageValue,
++        submittedTimestampNs,
++        representsGameFrame);
+@@ -347,0 +440,3 @@ void renderer::RT64Context::send_dummy_workload(uint32_t fb_address) {
++    if (!app->state->prepareNextWorkload()) return;
++    app->state->displayListRepresentsGameFrame = true;
++    app->state->displayListRefreshRate = UINT16_MAX;
+@@ -350,2 +445 @@ void renderer::RT64Context::send_dummy_workload(uint32_t fb_address) {
+-    // G_AD_DISABLE | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE | G_TD_CLAMP | G_TP_PERSP | G_CYC_FILL | G_PM_NPRIMITIVE
+-    // G_AC_NONE | G_ZS_PIXEL | G_RM_NOOP | G_RM_NOOP2
++
+@@ -378,0 +473 @@ bool renderer::RT64Context::update_config(const ultramodern::renderer::GraphicsC
++    applied_config = new_config;
+@@ -380 +474,0 @@ bool renderer::RT64Context::update_config(const ultramodern::renderer::GraphicsC
+-    // When updating the user configuration, only discard framebuffers if an option was changed that affects the resolution.
+@@ -389,0 +484,6 @@ bool renderer::RT64Context::update_config(const ultramodern::renderer::GraphicsC
++    if (new_config.texture_option != old_config.texture_option) {
++        if (!apply_builtin_texture_mode(new_config.texture_option)) {
++            applied_config.texture_option =
++                ultramodern::renderer::TextureMode::Original;
++        }
++    }
+@@ -392,0 +493,115 @@ bool renderer::RT64Context::update_config(const ultramodern::renderer::GraphicsC
++void renderer::RT64Context::enable_cpu_framebuffer_completion() {
++    app->state->cpuFramebufferCompletionEnabled = true;
++}
++
++void renderer::RT64Context::complete_cpu_framebuffer(uint32_t address, std::span<const uint32_t> effects) {
++    app->state->completeCpuFramebuffer(address, effects.data(), effects.size());
++}
++
++bool renderer::RT64Context::cpu_framebuffer_pending() const {
++    return app->state->cpuFramebufferPresentPending;
++}
++
++bool renderer::RT64Context::prepare_render_admission(bool auxiliaryTask) {
++    return app->state->prepareNextWorkload(auxiliaryTask);
++}
++
++void renderer::RT64Context::run_state_operation(void (*operation)(void*), void* context) {
++    if (!app || !operation) throw std::runtime_error("Invalid renderer state operation");
++    if (state_operation_active) throw std::runtime_error("Nested renderer state operation");
++    auto& state = *app->state;
++    auto& workloads = *app->workloadQueue;
++    auto& presents = *app->presentQueue;
++
++    if (state.cpuFramebufferPresentPending)
++        throw std::runtime_error("CPU framebuffer image is unfinished at save-state boundary");
++    if (!state.prepareNextWorkload())
++        throw std::runtime_error("Renderer stopped before save-state preparation");
++
++    workloads.waitForWorkloadId(state.workloadId);
++    presents.waitForPresentId(state.presentId);
++    std::scoped_lock consumers(workloads.threadMutex, presents.threadMutex);
++    {
++        std::scoped_lock cursors(workloads.cursorMutex, presents.cursorMutex);
++        if (workloads.writeCursor != workloads.threadCursor || presents.writeCursor != presents.threadCursor)
++            throw std::runtime_error("Renderer producer advanced during save-state retirement");
++    }
++    if (state.taskCompleteCallback || !state.returnAddressStack.empty())
++        throw std::runtime_error("Renderer task is still active at save-state boundary");
++
++    workloads.retireInterpolationWorkers();
++    workloads.ext.workloadGraphicsWorker->waitIfPending();
++    for (auto& transaction : presents.presentTransactions)
++        if (transaction.worker) transaction.worker->waitIfPending();
++    state.ext.framebufferGraphicsWorker->waitIfPending();
++    state.ext.drawDataUploader->wait();
++    state.ext.transformsUploader->wait();
++    state.ext.tilesUploader->wait();
++    state.ext.textureCache->waitForGPUUploads();
++    const uint64_t textureReadEpoch = state.ext.textureCache->acquireTextureRead();
++    struct TextureRead {
++        RT64::TextureCache* cache;
++        uint64_t epoch;
++        ~TextureRead() { cache->releaseTextureRead(epoch); }
++    } textures{state.ext.textureCache, textureReadEpoch};
++    state_operation_active = true;
++    struct ActiveOperation {
++        bool& active;
++        ~ActiveOperation() { active = false; }
++    } active{state_operation_active};
++    if (std::getenv("JFC_STATE_RENDEZVOUS_VI")) {
++        uint32_t count = 0;
++        auto roundTrip = [&](plume::RenderTexture* texture, uint32_t width, uint32_t height,
++                plume::RenderFormat format, const plume::RenderMultisampling& sampling) {
++            if (!texture) return;
++            const auto shaders = app->renderInterface->getCapabilities().shaderFormat;
++            auto* worker = state.ext.framebufferGraphicsWorker;
++            auto saved = RT64::captureStateTexture(worker, shaders, texture, width, height, format, sampling);
++            auto prepared = RT64::prepareStateTexture(worker, shaders, saved);
++            auto repeated = RT64::captureStateTexture(worker, shaders, prepared.get(), width, height, format, sampling);
++            if (saved.blocks != repeated.blocks)
++                throw std::runtime_error("Save-state GPU samples differ after prepared restore");
++            ++count;
++
++            std::fflush(stderr);
++        };
++        auto managers = [&](RT64::RenderTargetManager& targets, RT64::FramebufferManager& framebuffers) {
++            for (auto& pair : targets.targetMap) {
++                auto& t = *pair.second;
++                roundTrip(t.texture.get(), t.width, t.height, t.format, t.multisampling);
++            }
++            for (auto& pair : framebuffers.tileCopies) {
++                auto& t = pair.second;
++                roundTrip(t.texture.get(), t.textureWidth, t.textureHeight,
++                    RT64::RenderTarget::colorBufferFormat(targets.usesHDR), plume::RenderMultisampling());
++            }
++        };
++        managers(state.renderTargetManager, state.framebufferManager);
++        managers(app->sharedQueueResources->renderTargetManager, app->sharedQueueResources->framebufferManager);
++
++        auto owner = capture_state();
++        auto preparedOwner = prepare_state(owner);
++
++    }
++    operation(context);
++}
++
++std::vector<uint8_t> renderer::RT64Context::capture_state() {
++    if (!state_operation_active) throw std::runtime_error("Renderer state capture requires owner barrier");
++    return RT64::captureRendererState(*app->state);
++}
++
++std::unique_ptr<ultramodern::renderer::PreparedRendererState> renderer::RT64Context::prepare_state(const std::vector<uint8_t>& image) {
++    if (!state_operation_active) throw std::runtime_error("Renderer state preparation requires owner barrier");
++    struct Prepared final : ultramodern::renderer::PreparedRendererState {
++        RT64::PreparedRendererState state;
++        explicit Prepared(RT64::State& live, const std::vector<uint8_t>& bytes) : state(live, bytes) {}
++        void commit() noexcept override { state.commit(); }
++    };
++    return std::make_unique<Prepared>(*app->state, image);
++}
++
++ultramodern::renderer::GraphicsConfig renderer::RT64Context::get_applied_config() const {
++    return applied_config;
++}
++
+@@ -394 +609 @@ void renderer::RT64Context::enable_instant_present() {
+-    // Enable the present early presentation mode for minimal latency.
++
+@@ -443 +658,3 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-            [&](TexturePackUpdateAction &) {
++            [&](TexturePackUpdateAction &update) {
++                if (update.builtin_path) builtin_texture_pack_path = std::move(*update.builtin_path);
++                if (update.base_path) base_texture_pack_path = std::move(*update.base_path);
+@@ -449 +665,0 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-    // If any packs were disabled, unload all packs and load all the active ones.
+@@ -451,8 +667 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-        // Sort the enabled texture packs in reverse order so that earlier ones override later ones.
+-        std::vector<std::string> sorted_texture_packs{};
+-        sorted_texture_packs.reserve(enabled_texture_packs.size());
+-        for (const std::string& mod : enabled_texture_packs) {
+-            if (!secondary_disabled_texture_packs.contains(mod)) {
+-                sorted_texture_packs.emplace_back(mod);
+-            }
+-        }
++        const bool loaded = reload_texture_packs();
+@@ -460,5 +669,4 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-        std::sort(sorted_texture_packs.begin(), sorted_texture_packs.end(),
+-            [](const std::string& lhs, const std::string& rhs) {
+-                return recomp::mods::get_mod_order_index(lhs) > recomp::mods::get_mod_order_index(rhs);
+-            }
+-        );
++    }
++}
++
++bool renderer::RT64Context::reload_texture_packs() {
+@@ -466,5 +674,5 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-        // Build the path list from the sorted mod list.
+-        std::vector<RT64::ReplacementDirectory> replacement_directories;
+-        replacement_directories.reserve(enabled_texture_packs.size());
+-        for (const std::string &mod_id : sorted_texture_packs) {
+-            replacement_directories.emplace_back(RT64::ReplacementDirectory(recomp::mods::get_mod_filename(mod_id)));
++    std::vector<std::string> sorted_texture_packs{};
++    sorted_texture_packs.reserve(enabled_texture_packs.size());
++    for (const std::string& mod : enabled_texture_packs) {
++        if (!secondary_disabled_texture_packs.contains(mod)) {
++            sorted_texture_packs.emplace_back(mod);
+@@ -471,0 +680,23 @@ void renderer::RT64Context::check_texture_pack_actions() {
++    }
++
++    std::sort(sorted_texture_packs.begin(), sorted_texture_packs.end(),
++        [](const std::string& lhs, const std::string& rhs) {
++            return recomp::mods::get_mod_order_index(lhs) >
++                recomp::mods::get_mod_order_index(rhs);
++        });
++
++    std::vector<RT64::ReplacementDirectory> replacement_directories;
++    replacement_directories.reserve(
++        sorted_texture_packs.size() + (!builtin_texture_pack_path.empty() ? 1U : 0U) +
++        (!base_texture_pack_path.empty() ? 1U : 0U));
++    if (!base_texture_pack_path.empty()) {
++        replacement_directories.emplace_back(base_texture_pack_path);
++    }
++    if (!builtin_texture_pack_path.empty()) {
++        replacement_directories.emplace_back(builtin_texture_pack_path);
++        replacement_directories.back().enabled = builtin_texture_pack_enabled;
++    }
++    for (const std::string& mod_id : sorted_texture_packs) {
++        replacement_directories.emplace_back(
++            recomp::mods::get_mod_filename(mod_id));
++    }
+@@ -473,2 +704,10 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-        if (!replacement_directories.empty()) {
+-            app->textureCache->loadReplacementDirectories(replacement_directories);
++    if (replacement_directories.empty()) {
++        app->textureCache->clearReplacementDirectories();
++        return true;
++    }
++    else if (!app->textureCache->loadReplacementDirectories(
++                 replacement_directories)) {
++        std::fprintf(stderr, "Failed to load configured texture packs.\n");
++        if (!builtin_texture_pack_path.empty()) {
++            replacement_directories.erase(replacement_directories.begin() +
++                (base_texture_pack_path.empty() ? 0 : 1));
+@@ -476 +715,7 @@ void renderer::RT64Context::check_texture_pack_actions() {
+-        else {
++        if (replacement_directories.empty() ||
++            !app->textureCache->loadReplacementDirectories(
++                replacement_directories)) {
++            if (!base_texture_pack_path.empty()) {
++                throw std::runtime_error("Required application texture pack could not be loaded: " +
++                    base_texture_pack_path.string());
++            }
+@@ -478,0 +724 @@ void renderer::RT64Context::check_texture_pack_actions() {
++        return false;
+@@ -479,0 +726,21 @@ void renderer::RT64Context::check_texture_pack_actions() {
++    return true;
++}
++
++bool renderer::RT64Context::apply_builtin_texture_mode(
++    ultramodern::renderer::TextureMode requested_mode
++) {
++    builtin_texture_pack_enabled =
++        requested_mode == ultramodern::renderer::TextureMode::Enhanced;
++    const auto start = std::chrono::steady_clock::now();
++
++    const bool loaded = builtin_texture_pack_path.empty() ||
++        app->textureCache->queueReplacementDirectoryEnabled(
++            builtin_texture_pack_path, builtin_texture_pack_enabled) ||
++        reload_texture_packs();
++    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
++        std::chrono::steady_clock::now() - start);
++    if (!loaded) {
++        builtin_texture_pack_enabled = false;
++    }
++
++    return loaded;
+@@ -508,0 +776,9 @@ bool renderer::RT64HighPrecisionFBEnabled() {
++void renderer::set_builtin_texture_pack_path(std::filesystem::path path) {
++
++    texture_pack_action_queue.enqueue(TexturePackUpdateAction{std::move(path)});
++}
++
++void renderer::set_base_texture_pack_path(std::filesystem::path path) {
++    texture_pack_action_queue.enqueue(TexturePackUpdateAction{std::nullopt, std::move(path)});
++}
++
+@@ -516 +791,0 @@ void renderer::enable_texture_pack(const recomp::mods::ModContext& context, cons
+-    // Check for the texture pack enabled config option.
+@@ -564,3 +838,0 @@ void renderer::secondary_disable_texture_pack(const std::string& mod_id) {
+-
+-// HD texture enable option. Must be an enum with two options.
+-// The first option is treated as disabled and the second option is treated as enabled.
+diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp
+index 7ee84ed..e5a5c9a 100644
+--- a/recompui/src/util/file.cpp
++++ b/recompui/src/util/file.cpp
+@@ -11,0 +12 @@
++#include <stdexcept>
+@@ -13,3 +14 @@
+-#if defined(_WIN32)
+-#include <Shlobj.h>
+-#elif defined(__linux__)
++#if defined(__linux__)
+@@ -62 +61 @@ namespace recompui {
+-        // directly check for portable.txt (windows and native linux binary)
++
+@@ -66,0 +66,12 @@ namespace recompui {
++#if defined(_WIN32)
++        if (const wchar_t* app_folder_path = _wgetenv(L"APP_FOLDER_PATH");
++            app_folder_path != nullptr && app_folder_path[0] != L'\0') {
++            return std::filesystem::path{app_folder_path};
++        }
++#else
++        if (const char* app_folder_path = getenv("APP_FOLDER_PATH");
++            app_folder_path != nullptr && app_folder_path[0] != '\0') {
++            return std::filesystem::path{app_folder_path};
++        }
++#endif
++
+@@ -68 +79 @@ namespace recompui {
+-        // Check for portable file in the directory containing the app bundle.
++
+@@ -78,6 +88,0 @@ namespace recompui {
+-        // Deduce local app data path.
+-        PWSTR known_path = NULL;
+-        HRESULT result = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &known_path);
+-        if (result == S_OK) {
+-            recomp_dir = std::filesystem::path{known_path} / programconfig::get_program_id();
+-        }
+@@ -85,5 +90,3 @@ namespace recompui {
+-        CoTaskMemFree(known_path);
+-#elif defined(__linux__) || defined(__APPLE__)
+-        // check for APP_FOLDER_PATH env var
+-        if (getenv("APP_FOLDER_PATH") != nullptr) {
+-            return std::filesystem::path{getenv("APP_FOLDER_PATH")};
++        char* base = SDL_GetBasePath();
++        if (base == nullptr) {
++            throw std::runtime_error("Unable to locate portable data directory");
+@@ -91 +94,4 @@ namespace recompui {
+-
++        recomp_dir = std::filesystem::path{std::u8string{
++            reinterpret_cast<const char8_t*>(base)}} / "data";
++        SDL_free(base);
++#elif defined(__linux__) || defined(__APPLE__)
+diff --git a/recompui/src/util/program_config.cpp b/recompui/src/util/program_config.cpp
+index 5fb8b5e..db931df 100644
+--- a/recompui/src/util/program_config.cpp
++++ b/recompui/src/util/program_config.cpp
+@@ -4,0 +5 @@ static std::u8string program_id = u8"";
++static std::string build_label = "";
+@@ -15,0 +17,4 @@ namespace recompui {
++        void set_build_label(const std::string& label) {
++            build_label = label;
++        }
++
+@@ -28,0 +34,4 @@ namespace recompui {
++
++        const std::string &get_build_label() {
++            return build_label;
++        }
