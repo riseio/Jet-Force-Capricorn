@@ -1,4 +1,4 @@
-# Jet Force Capricorn
+# Children and Dog go Pew Pew (CadgPP)
 
 A native PC and Steam Deck port with widescreen support,
 interpolated rendering, modern controls and optional quality-of-life improvements.
@@ -140,7 +140,7 @@ Use Steam's **Gamepad** layout. These are the default in-game bindings:
 
 ## Disclaimer
 
-Jet Force Capricorn is an unofficial fan project. It is not affiliated with,
+Children and Dog go Pew Pew (CadgPP) is an unofficial fan project. It is not affiliated with,
 endorsed by or sponsored by Nintendo, Rare, Microsoft or the original game's
 other rights holders.
 
