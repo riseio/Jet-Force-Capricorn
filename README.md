@@ -3,6 +3,10 @@
 A native PC and Steam Deck port with widescreen support,
 interpolated rendering, modern controls and optional quality-of-life improvements.
 
+**I never played this game as a child so everything here is new to me. If I have missed anything or lost anything along the way don't hesitate to tell me!**
+
+**This is an early release version for user feedback since I never played the original. I've done my best to ensure as few issues as possible but expect to find some which i'll resolve asap =)**
+
 ## Download and play
 
 Windows and Linux builds are available from [Releases](https://github.com/riseio/Jet-Force-Capricorn/releases).
