@@ -1,59 +1,63 @@
 # Jet Force Capricorn
 
 A native PC and Steam Deck port of **Jet Force Gemini**, with widescreen support,
-smooth interpolated rendering, modern controls and loads of optional quality-of-life improvements.
+interpolated rendering, modern controls and optional quality-of-life improvements.
 
 ## Download and play
 
-Get the latest Windows portable EXE or Linux AppImage from
-[Releases](https://github.com/riseio/Jet-Force-Capricorn/releases).
-You need your own **Jet Force Gemini (USA), revision 0** ROM in `.z64` format. Select it when prompted on first launch.
+Windows and Linux builds are available from [Releases](https://github.com/riseio/Jet-Force-Capricorn/releases).
+You need your own **Jet Force Gemini (USA), revision 0** ROM. Select it on first
+launch; `.z64`, `.v64` and `.n64` byte orders are supported.
+
+The first launch compiles native game code locally from your ROM. Later launches
+reuse it. No development tools or internet connection are needed to play.
+The 0.3.169 packages contain no ROM, extracted game assets or translated game code.
 
 - **Windows:** Run `JetForceCapricorn-Portable.exe` from a writable folder.
-  Saves, settings and caches stay in the adjacent `data` folder. Keep that folder
-  when updating or moving the game. The EXE includes its runtime libraries.
-- **Steam Deck:** Make the AppImage executable, add it to Steam as a non-Steam
-  game in Desktop Mode and use a Gamepad layout. Launch it from Gaming Mode
-  without Proton.
-- **Linux:** Make the AppImage executable and open it. It includes the C/C++
-  runtime and application libraries; your system supplies the graphics drivers
-  and desktop services. Saves and settings use `~/.config/JetForceCapricorn`.
+- **Linux:** Make the AppImage executable and open it.
+- **Steam Deck:** Add the executable AppImage to Steam in Desktop Mode, select
+  a Gamepad layout and launch it from Gaming Mode without Proton.
 
-Enhanced textures are prepared locally from your ROM and cached for later
-launches. Switch them in **Graphics > Enhanced Textures**, or press View / Select
-on a controller to swap them in at anytime during play.
+Both packages keep saves, settings and generated content in the adjacent `data`
+folder. Keep that folder when replacing or moving the executable.
+
+Enhanced textures are generated locally from your ROM. Choose **Install enhanced
+textures** in the launcher or Graphics settings, then switch them with
+**Graphics > Enhanced Textures** or View / Select during play. Installation can
+be cancelled; removing the pack keeps your ROM, saves and settings.
 
 ## Enhancements
 
-- Widescreen and ultrawide support, with adapted menus and HUD placement.
-- A complete control overhaul. The original controls are completely replaced with modern twinstick.
-- Higher resolutions, anti-aliasing and interpolated rendering, with display-refresh
-  and manual frame-rate settings.
-- Mouse aiming and dual-stick controls: move and strafe with the left stick,
-  look and aim with the right stick. You can also now manual aim while crouched.
-- Remappable controls, mouse and stick sensitivity, deadzone, inversion and rumble settings.
-- Sniper aiming sensitivity scales with zoom.
+- Widescreen and ultrawide support, with adjusted menus and HUD placement.
+- Higher resolutions, anti-aliasing and interpolated rendering for high refresh rate displays.
+- Mouse aiming and modern twin-stick controls, including aiming while crouched.
+- Adjustable field of view and camera distance, with separate reset buttons.
+- Separate horizontal and vertical inversion for each stick.
+- Remappable controls, sensitivity, deadzones and rumble settings.
+- Sniper aiming sensitivity that scales with zoom.
+- Audio output device selection.
 - Adjustable draw distance and fog strength.
-- Persistent save states alongside the original game saves.
-- Direct weapon shortcuts, quick throwable grenades.
+- Cleaner original fonts and UI artwork, using images from your own ROM.
+- Direct weapon shortcuts, quick throwable selection and persistent save states.
+- Ordinary game saves at completed area transitions.
 
-## Quality of life
+## QOL Toggles
 
 Open settings with **Escape / R4**, or choose Options in the pause menu, then
-select **QOL**. Each setting is independent. Defaults below apply to a fresh
+select **QOL**. Each option is independent. These defaults apply to a fresh
 configuration; existing preferences are kept.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Modern Health Display | Off | Shows the current health container as metroid style capsule healthbar above the weapon panel. |
+| Modern Health Display | Off | Shows reserve health containers and the current container as a capsule bar above the weapon panel. |
 | Room Collectible Counters | On | Shows your Mizar token total and Tribals still missing in the current room. Lost Tribals remain counted as missing. |
 | Area Collectible Tracker | On | Shows remaining keys, including coloured keys, spaceship parts and Floyd robot components, including chest contents and event rewards. Icons stack above tokens and Tribals; collected categories disappear. |
 | Weapon Shortcut HUD | On | Shows the four assigned weapon icons in a top-right D-pad, with numbers 1-4 for keyboard shortcuts. |
-| Cutscene Skipping | On | Press Start / Enter to skip a cutscene. |
-| Invulnerable Tribals | Off | Prevents Tribals from being killed. |
+| Cutscene Skipping | On | Use Space, Enter, keypad Enter or Start to skip a cutscene. |
+| Invulnerable Tribals | Off | Protects Tribals from lethal damage. |
 | Unlimited Lives | On | Restarts after death as though an extra life were available, without consuming continues. |
-| Persistent Tribal Rescues | Off | Keeps individually rescued Tribals rescued when revisiting levels in the same save slot. |
-| Final Tribal Requirement | Original | Choose the original rescued-Tribal requirement or reduce the final-access threshold to 70%, 50% or 25%. True 100% completion remains separate so you can still go for that if you really want. |
+| Persistent Tribal Rescues | On | Shares individually rescued Tribals across characters and return visits in the same save slot. |
+| Final Tribal Requirement | Original | Choose the original requirement or reduce the final spaceship-part threshold to 70%, 50% or 25%. True 100% completion stays separate. |
 | Skip Seen Ship Landings | Off | Automatically skips a ship landing after you have watched that landing to completion in the same save slot. |
 | Quick Character Switching | Off | Switches to the next unlocked character at that character's saved location without returning to space. |
 | Skip Seen Character Travel | Off | Skips repeat character-selection travel sequences. |
@@ -61,31 +65,50 @@ configuration; existing preferences are kept.
 | Double Pistol Recharge | Off | Recharges the default pistol twice as fast, with its normal firing rate. |
 | Double Ammo Pickups | Off | Doubles small, large, enemy-dropped and duplicate-weapon ammo awards, capped at normal capacity. |
 | Persistent Dropped Pickups | Off | Keeps dropped health, ammo and collectible heads until collected or the map is left. |
+| Upgraded Shotgun | On | A fresh press fires six fully charged energy spheres with a wider spread, using one round. Holding does not repeat the blast. |
+| Upgraded Flamethrower | On | Half fuel use, 50% more burning damage and a hurt reaction whenever the enemy can be staggered. |
+| Upgraded Shocker | On | Four times the beam range, arcs to up to three adjacent enemies and a reserve of at least 100. Arcs respect walls; earned capacity upgrades are kept. |
+| Persistent Corpses | Off | Keeps bodies until the area is left. Turning this off resumes fading; memory cleanup can still remove bodies. |
 | Mission Complete Refill | On | Refills health and owned weapon ammo when you dismiss the mission-complete screen. |
 | Double Enemy Drop Chance | On | Raises random enemy weapon/ammo drop chance from one in three to two in three. Guaranteed rewards and pickup quantities stay the same. |
-| Fast Throws | On | Halves throwables animation, release and recovery times. This makes throwing grenades feel way better and more useful. |
+| Fast Throws | On | Grenade and other throwable animations take half as long. Fuses and projectile speed stay the same. |
+| Double Robot Mission Time | Off | Doubles the time limit for a newly started or retried Floyd mission. |
+| Hide Floyd Companion | Off | Hides the following robot and companion crosshair outside Floyd missions and story scenes. |
+| Half Boss Health | Off | New boss fights and phases start at half health. Existing saved health is retained. |
+| Boss Target Health | Off | Shows the health and vulnerability of the boss part under your aim. |
+| Double Pistol Boss Damage | On | Pistol shots deal twice their normal damage to vulnerable boss parts. |
+| Boss Phase Ammo Refill | On | Defeating a boss phase or weak point restores 25% of each owned weapon's capacity. |
+| Boss Weak-point Halos | On | Marks damageable boss regions with pulsing green halos. |
+| Open Mechantis Final Phase | On | After a mantis loses its weapons, its final weak point remains vulnerable during movement and attacks. |
 | Halo-style Health | Off | After 30 damage-free gameplay seconds, restores missing health every five seconds over the next 60 seconds. |
 | Ship Part Scanner | Off | Choose Audio, Visual or Audio + Visual guidance towards missing ship parts. Visual hints also need Show Guidance Text. |
-| Show Guidance Text | Off | Shows bottom-left ship-part scanner hints and final Tribal-requirement guidance. I use this for debugging so you likely won't need it. |
+| Show Guidance Text | Off | Shows ship-part scanner hints and guidance for the selected final Tribal requirement. |
 
 ### Weapon shortcuts and throwables
 
 Hold **Ctrl / L4** and press a weapon slot to assign the equipped weapon.
-Press the slot alone to equip it directly. Slots 1-4 correspond to D-pad
-Up, Right, Down and Left. Assignments are saved separately for each character.
+Press the slot alone to equip it. Slots 1-4 correspond to D-pad Up, Right, Down
+and Left. Assignments are saved separately for each character.
 
-Press **G / Y** to use the assigned throwable and return to your weapon. Grenades
-are the default. To assign another, equip it, hold **Ctrl / L4**, then press
-**G / Y**. Grenades, shurikens, fish food, plasma bombs, remote mines and cluster
-bombs can be assigned; flares keep their normal weapon controls. The bottom-left
-icon and count show the assigned item and remaining ammo.
-Because Flares have their arm and throw stages separate I didn't include them... soz
+Press **G / Y** to use the assigned throwable and return to your weapon.
+To assign another, equip it, hold **Ctrl / L4**, then press **G / Y**.
+Grenades, shurikens, fish food, plasma bombs, remote mines and cluster bombs can
+be assigned; flares retain their normal weapon controls.
 
 ### Saving
 
 Press **F6 / L5** during gameplay to save a state, then **F9 / R5** to restore it,
 including after restarting the game. Saving again replaces the manual state.
 Ordinary game saves are separate. Restoring a state keeps your current QOL preferences.
+
+## Other optional settings
+
+- **Graphics:** vertical FOV from 30 to 89 degrees, with 60 as the default;
+  camera distance from 50% to 150%, with 100% as the default. Wide screens
+  expand the horizontal view. Scope zoom and camera collision retain their normal behaviour.
+- **Graphics:** enhanced textures, draw distance, fog, anti-aliasing and frame-rate settings.
+- **Sound:** choose an audio output device.
+- **Controls:** sensitivity, axis inversion, deadzones and rumble strength.
 
 ## PC controls
 
@@ -95,7 +118,7 @@ Ordinary game saves are separate. Restoring a state keeps your current QOL prefe
 | Left mouse button | Fire |
 | Right mouse button | Hold for fine aim / sniper scope |
 | W / S while scoped | Adjust sniper zoom |
-| Space | Jump / stand |
+| Space | Jump / stand; skip cutscene when enabled |
 | C | Crouch / crawl |
 | F | Interact / advance dialogue |
 | Shift | Sprint, when enabled |
@@ -111,7 +134,7 @@ Ordinary game saves are separate. Restoring a state keeps your current QOL prefe
 | F11 or Alt + Enter | Toggle fullscreen |
 
 For textures, open **Escape > Graphics > Enhanced Textures**.
-Change sensitivity and inversion in Controls, or remap actions in Bindings.
+Adjust sensitivity and inversion in settings, or remap actions in Bindings.
 
 ## Steam Deck controls
 
@@ -138,29 +161,20 @@ Use Steam's **Gamepad** layout. These are the default in-game bindings:
 | R4 | Open / close settings |
 | L5 / R5 | Save / restore state |
 
+
 ## Disclaimer
 
-Jet Force Capricorn is an unofficial fan project not associated with or containing the original game in any way.
-It is not affiliated with, endorsed by, or sponsored by Nintendo, Rare, Microsoft, or any other
-rights holder.
+Jet Force Capricorn is an unofficial fan project. It is not affiliated with,
+endorsed by or sponsored by Nintendo, Rare, Microsoft or the original game's
+other rights holders.
 
-**We do not provide the original game.** This repository and its downloads do
-not include a Jet Force Gemini ROM, music, sounds, textures, models, levels, or other
-extracted original game assets. We do not provide ROM downloads or links to them.
-Game assets are loaded or generated locally from the ROM you supply.
-
-**You must own a legally purchased copy of Jet Force Gemini and provide your own
-lawfully obtained ROM dump** of the supported US revision-0 release to use this
-project. The port is not a substitute for owning the original game. Do not
-upload or share ROMs or extracted game assets in this repository or its issues.
-
-Jet Force Gemini, its characters, names, artwork, music, trademarks and all other
-original game content belong to their respective copyright and trademark
-holders. We claim no ownership of that content. This project grants no rights
-to copy or redistribute the original game or its assets.
+Provide your own lawfully obtained ROM of the supported release. Do not upload
+ROMs or extracted game assets to this repository or its issues. The original
+game and its content belong to their respective owners.
 
 ## Project
 
 Built with N64Recomp, N64ModernRuntime, RecompFrontend and RT64.
 
-[Report a bug](https://github.com/riseio/Jet-Force-Capricorn/issues) When raising issues please make sure you include the build version you experienced the bug in ^_^
+[Report a bug](https://github.com/riseio/Jet-Force-Capricorn/issues/new) and include
+the build version and steps to reproduce it.

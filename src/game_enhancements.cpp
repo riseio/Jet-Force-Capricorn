@@ -1,3 +1,4 @@
+#include "camera_ownership.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -13,11 +14,16 @@
 #include <mutex>
 
 #include "display_options.hpp"
+#include "allocation_generations.hpp"
 #include "../include/rt64_extended_gbi.h"
 #include "gbi/rt64_display_list.h"
 #include "gbi/rt64_gbi_f3ddkr.h"
 #include "jfc_enhancements.hpp"
+#include "jfc_modernization.hpp"
+#include "ultramodern/audio_activity.hpp"
+#include "ultramodern/threads.hpp"
 #include "native_context.hpp"
+#include "native_rom_data.hpp"
 #include "jfc_recomp.h"
 #include "modern_input.hpp"
 #include "save_state_game.hpp"
@@ -30,6 +36,35 @@ namespace {
 std::mutex camera_samples_mutex;
 std::array<std::vector<ultramodern::renderer::CameraSample>, 2> camera_samples;
 std::array<bool, 2> camera_samples_complete{true, true};
+std::mutex allocation_generations_mutex;
+jfc::AllocationGenerations allocation_generations;
+std::array<std::vector<ultramodern::renderer::MatrixGeneration>, 2> matrix_generations;
+std::array<bool, 2> matrix_generations_complete{true, true};
+
+std::vector<ultramodern::renderer::GraphicsTaskMetadata::TextureScrollRange> texture_scrolls;
+uint64_t texture_scroll_serial = 0;
+
+void forget_texture_scrolls(uint32_t address, uint32_t bytes) {
+    const auto first = std::lower_bound(texture_scrolls.begin(), texture_scrolls.end(), address,
+        [](const auto &entry, uint32_t begin) { return entry.end <= begin; });
+    auto last = first;
+    while (last != texture_scrolls.end() && last->begin < address + bytes) ++last;
+    texture_scrolls.erase(first, last);
+}
+
+void capture_matrix_generation(uint8_t *rdram, uint32_t matrix, uint32_t owner) {
+    const int32_t bank = MEM_W(0, 0x800FD7C0U);
+    matrix &= 0x00FFFFF8U;
+    if (bank < 0 || bank > 1 || matrix > 0x800000U - 64)
+        throw std::runtime_error("Invalid matrix generation producer");
+    const std::scoped_lock lock(allocation_generations_mutex, camera_samples_mutex);
+    auto &entries = matrix_generations[size_t(bank)];
+    const auto it = std::lower_bound(entries.begin(), entries.end(), matrix,
+        [](const auto &entry, uint32_t address) { return entry.address < address; });
+    const ultramodern::renderer::MatrixGeneration sample{matrix, allocation_generations.at(owner & 0x1FFFFFFFU)};
+    if (it != entries.end() && it->address == matrix) *it = sample;
+    else entries.insert(it, sample);
+}
 
 thread_local uint32_t camera_producer = 0;
 thread_local ultramodern::renderer::CameraSample camera_float_sample;
@@ -53,7 +88,6 @@ std::array<std::atomic<uint16_t>, 4> suppressed_direct_action_buttons{};
 std::array<std::atomic_bool, 4> physical_aim_buttons{};
 std::atomic_bool modern_controls{true};
 std::atomic_bool mouse_acceleration{false};
-std::atomic_bool invert_right_stick_y{false};
 std::atomic_bool cutscene_skipping{true};
 std::atomic_int joystick_sensitivity{100};
 std::atomic_int joystick_sensitivity_x{100};
@@ -251,7 +285,6 @@ constexpr uint32_t expert_jump_binding_address = control_mode_expert + 0x0CU;
 constexpr uint32_t expert_crouch_binding_address = control_mode_expert + 0x10U;
 constexpr uint32_t gameplay_mode_address = 0x800FD7C4U;
 constexpr uint32_t animation_camera_address = 0x801045B8U;
-constexpr uint32_t lobby_camera_state_address = 0x800FB080U;
 constexpr uint32_t r_button = 0x10U;
 
 constexpr uint32_t modern_jump_button = 0x00010000U;
@@ -265,32 +298,8 @@ bool valid_rdram_address(uint32_t address, uint32_t size) {
         size <= rdram_size && physical <= rdram_size - size;
 }
 
-bool explicit_camera_owns_view(uint8_t* rdram, uint32_t player) {
-    if (!valid_rdram_address(player, 0x5C4U) ||
-        !valid_rdram_address(animation_camera_address, sizeof(uint32_t))) {
-        return true;
-    }
-
-    return MEM_W(0, animation_camera_address) != 0 ||
-        MEM_W(0x5C0, player) != 0 ||
-        MEM_BU(0x1FA, player) != 0 ||
-        MEM_BU(0x198, player) != 0 ||
-        MEM_BU(0x1F9, player) != 0 ||
-        MEM_BU(0x19D, player) >= 2 ||
-        MEM_BU(0x18E, player) != 0;
-}
-
 bool modern_attached_camera_eligible(uint8_t* rdram, uint32_t player) {
-    if (explicit_camera_owns_view(rdram, player) ||
-        !valid_rdram_address(lobby_camera_state_address, sizeof(uint32_t))) {
-        return false;
-    }
-
-    return (MEM_BU(0x10D, player) & 0x3U) == 0 &&
-        MEM_BU(0x19F, player) == 0 &&
-        (MEM_BU(1, player) & 0x3U) != 0x3U &&
-        MEM_W(0, lobby_camera_state_address) == 0 &&
-        MEM_H(0x1FC, player) < 0;
+    return jfc::camera::attached_eligible(rdram, player);
 }
 
 bool boss_control_owns_aim(uint8_t* rdram, uint32_t player) {
@@ -393,8 +402,8 @@ void preserve_modern_action_facing(
     const bool directional_action =
         scope.axes.native_movement_buttons != 0U ||
         scope.axes.isolated_l2_movement_buttons != 0U;
-    const bool grounded_direct_look =
-        action_state <= 2U && scope.direct_yaw_pending;
+    const bool grounded_direct_look = scope.direct_yaw_pending &&
+        (action_state <= 2U || (action_state == 3U && MEM_BU(0x14A, scope.owner) != 0));
     if (!directional_action && !grounded_direct_look) {
         return;
     }
@@ -852,6 +861,12 @@ void end_weapon_panel_projected_scope(uint8_t* rdram) {
 
 namespace jfc::enhancements {
 
+void record_effect_matrix(uint8_t* rdram, uint32_t matrix, uint32_t object) {
+    if (!valid_rdram_address(matrix,64) || (matrix&7) || !valid_rdram_address(object,0x6C))
+        throw std::runtime_error("Invalid effect matrix owner");
+    capture_matrix_generation(rdram,matrix,object);
+}
+
 const char* try_graphics_task_is_frame(uint8_t* rdram, uint32_t task, bool& is_frame) noexcept {
 
     if (rdram == nullptr || task < 0x10U || (task & 7U) != 0U ||
@@ -929,14 +944,6 @@ bool modern_controls_enabled() {
 
 void set_mouse_acceleration(bool enabled) {
     mouse_acceleration.store(enabled, std::memory_order_relaxed);
-}
-
-void set_right_stick_y_inverted(bool inverted) {
-    invert_right_stick_y.store(inverted, std::memory_order_relaxed);
-}
-
-bool right_stick_y_inverted() {
-    return invert_right_stick_y.load(std::memory_order_relaxed);
 }
 
 bool physical_aim_active(int controller) {
@@ -1036,12 +1043,127 @@ void sample_aim(
 
 }
 
+extern "C" void jfc_ui_alpha_scope(uint8_t* rdram, uint32_t enter) noexcept(false) {
+    jfc_ui_alpha_scope_at(rdram, display_list_cursor_address, enter);
+}
+
+extern "C" void jfc_ui_alpha_scope_at(
+    uint8_t* rdram, uint32_t cursor_pointer, uint32_t enter
+) noexcept(false) {
+    constexpr uint32_t bytes = 3 * sizeof(NativeGfxCommand);
+    if (!rdram || (cursor_pointer & 3U) ||
+        !valid_rdram_address(cursor_pointer, sizeof(uint32_t))) {
+        throw std::runtime_error("Invalid native UI display-list cursor address");
+    }
+    const uint32_t cursor = uint32_t(MEM_W(0, cursor_pointer));
+    if (enter > 1 || (cursor & 7U) || !valid_rdram_address(cursor, bytes)) {
+        throw std::runtime_error("Invalid native UI display-list cursor or scope");
+    }
+    append_gfx_commands(rdram, cursor_pointer, std::array{
+        NativeGfxCommand{(RT64_HOOK_OPCODE << 24) | RT64_HOOK_MAGIC_NUMBER,
+            (RT64_HOOK_OP_PUSH << 28) | RT64_EXTENDED_OPCODE},
+        NativeGfxCommand{0x64000000U | G_EX_UIALPHASCOPE_V1, enter},
+        NativeGfxCommand{(RT64_HOOK_OPCODE << 24) | RT64_HOOK_MAGIC_NUMBER,
+            RT64_HOOK_OP_POP << 28}});
+}
+
 extern "C" void jfc_prepare_matrix_tag(uint32_t id) {
     pending_matrix_tag = (id >> 2) & RT64::GBI_F3DDKR::MatrixTagIdMask;
     if (pending_matrix_tag == 0) {
         pending_matrix_tag = 1;
     }
     pending_matrix_multiply = false;
+}
+
+extern "C" void jfc_record_allocation(uint8_t *rdram, uint32_t slot, uint32_t size, uint32_t taken) noexcept(false) {
+    if (taken != 1) return;
+    if (!valid_rdram_address(slot, 20) || (slot & 3U))
+        throw std::runtime_error("Invalid native allocation slot");
+    const uint32_t address = uint32_t(MEM_W(0, slot));
+    if (!valid_rdram_address(address, size) || size > uint32_t(MEM_W(4, slot)))
+        throw std::runtime_error("Invalid native allocation size");
+    if (size == 0) return;
+    std::lock_guard lock(allocation_generations_mutex);
+    allocation_generations.replace(address & 0x1FFFFFFFU, size, true);
+    forget_texture_scrolls(address & 0x1FFFFFFFU, size);
+}
+
+extern "C" void jfc_record_release(uint8_t *rdram, uint32_t slot) noexcept(false) {
+    if (!valid_rdram_address(slot, 20) || (slot & 3U))
+        throw std::runtime_error("Invalid native release slot");
+    const uint32_t address = uint32_t(MEM_W(0, slot));
+    const uint32_t size = uint32_t(MEM_W(4, slot));
+    if (!valid_rdram_address(address, size))
+        throw std::runtime_error("Invalid native release extent");
+    if (size == 0) return;
+    std::lock_guard lock(allocation_generations_mutex);
+    allocation_generations.replace(address & 0x1FFFFFFFU, size, false);
+    forget_texture_scrolls(address & 0x1FFFFFFFU, size);
+}
+
+extern "C" uint64_t jfc_effect_generation(uint32_t address) noexcept(false) {
+    if (!valid_rdram_address(address, 4) || (address & 3U))
+        throw std::runtime_error("Invalid native effect owner");
+    std::lock_guard lock(allocation_generations_mutex);
+    return allocation_generations.at(address & 0x1FFFFFFFU);
+}
+
+extern "C" void jfc_record_effect_birth(uint32_t address, uint32_t bytes) noexcept(false) {
+    if (!valid_rdram_address(address, bytes) || (address & 3U) || !bytes)
+        throw std::runtime_error("Invalid native effect slot birth");
+    std::lock_guard lock(allocation_generations_mutex);
+    allocation_generations.replace(address & 0x1FFFFFFFU, bytes, true);
+    forget_texture_scrolls(address & 0x1FFFFFFFU, bytes);
+}
+
+extern "C" void jfc_record_texture_scroll(uint32_t address, uint32_t count,
+    uint32_t wrap_s, uint32_t wrap_t, int32_t delta_s, int32_t delta_t) {
+    if (!count) return;
+    if (count > 0x800000U / 16 || !valid_rdram_address(address, count * 16) || (address & 3U))
+        throw std::runtime_error("Native texture scroll range is outside RDRAM");
+    const uint32_t begin = address & 0x1FFFFFFFU, end = begin + count * 16;
+    std::lock_guard lock(allocation_generations_mutex);
+
+    const bool modulo = std::has_single_bit(wrap_s) && std::has_single_bit(wrap_t) &&
+        wrap_s <= 65536 && wrap_t <= 65536;
+    const uint64_t generation = allocation_generations.at(begin);
+    if (!modulo || !generation || allocation_generations.at(end - 1) != generation) {
+        forget_texture_scrolls(begin, end - begin);
+        return;
+    }
+    auto found = std::lower_bound(texture_scrolls.begin(), texture_scrolls.end(), begin,
+        [](const auto &entry, uint32_t key) { return entry.begin < key; });
+    if (found != texture_scrolls.end() && found->begin == begin && found->end == end &&
+        found->wrap[0] == wrap_s && found->wrap[1] == wrap_t) {
+        const int32_t delta[2]{delta_s, delta_t};
+        for (unsigned axis = 0; axis < 2; ++axis) {
+            if ((delta[axis] > 0 && found->phase[axis] > INT64_MAX - delta[axis]) ||
+                (delta[axis] < 0 && found->phase[axis] < INT64_MIN - delta[axis]))
+                throw std::runtime_error("Native texture scroll phase overflow");
+        }
+        for (unsigned axis = 0; axis < 2; ++axis) found->phase[axis] += delta[axis];
+        return;
+    }
+    if (texture_scroll_serial == UINT64_MAX)
+        throw std::runtime_error("Native texture scroll generation overflow");
+    const ultramodern::renderer::GraphicsTaskMetadata::TextureScrollRange sample{
+        begin, end, ++texture_scroll_serial, {wrap_s, wrap_t}, {delta_s, delta_t}};
+    forget_texture_scrolls(begin, end - begin);
+    found = std::lower_bound(texture_scrolls.begin(), texture_scrolls.end(), begin,
+        [](const auto &entry, uint32_t key) { return entry.begin < key; });
+    texture_scrolls.insert(found, sample);
+}
+
+extern "C" void jfc_record_object_texture_scroll(uint8_t *rdram, recomp_context *ctx) {
+    const int32_t first = int32_t(ctx->r18), end = int32_t(ctx->r14);
+    if (first >= end) return;
+    const uint32_t model = uint32_t(ctx->r2);
+    if (first < 0 || !valid_rdram_address(model, 0x24))
+        throw std::runtime_error("Invalid native object scroll batch");
+    const uint64_t address = uint64_t(uint32_t(MEM_W(0x20, model))) + uint64_t(first) * 16;
+    if (address > UINT32_MAX) throw std::runtime_error("Native object scroll address overflow");
+    jfc_record_texture_scroll(uint32_t(address), uint32_t(end - first), uint32_t(ctx->r4), uint32_t(ctx->r5),
+        int32_t(ctx->r3), int32_t(ctx->r6));
 }
 
 namespace {
@@ -1147,6 +1269,7 @@ extern "C" void jfc_tag_last_matrix(uint8_t* rdram, recomp_context* ctx) {
         tagged_w1 |= RT64::GBI_F3DDKR::SkyMatrixTagW1;
     }
     MEM_W(4, command) = tagged_w1;
+    capture_matrix_generation(rdram, w1, pending_matrix_tag << 2);
     pending_matrix_multiply = false;
 }
 
@@ -1210,6 +1333,12 @@ extern "C" void jfc_tag_model_bone_dma(
         std::fflush(stderr);
         std::exit(EXIT_FAILURE);
     }
+    if (MEM_B(0x4E, model) != 0) {
+        const int32_t count = MEM_B(0x4F, model);
+        const uint32_t base = uint32_t(MEM_W(0, command)) & 0x00FFFFF8U;
+        for (int32_t bone = 0; bone < count; ++bone)
+            capture_matrix_generation(rdram, base + uint32_t(bone) * 64, instance);
+    }
 }
 
 extern "C" void jfc_begin_camera_pass(uint32_t producer) noexcept(false) {
@@ -1228,6 +1357,9 @@ extern "C" void jfc_capture_camera_sample(uint8_t* rdram, uint32_t role) noexcep
     camera_producer = 0;
 
     const uint32_t view = role == 0 ? 0x800FAF78U : 0x800FAFF8U;
+    sample.billboardScale = read_rdram_float(rdram, 0x800A3168U);
+    if (!std::isfinite(sample.billboardScale) || sample.billboardScale < 0)
+        throw std::runtime_error("Invalid native billboard lens coefficient");
     for (uint32_t i = 0; i < 16; ++i) {
         sample.view[i] = read_rdram_float(rdram, view + i * 4);
         sample.projection[i] = read_rdram_float(rdram, 0x800FAA70U + i * 4);
@@ -1303,6 +1435,27 @@ ultramodern::renderer::CameraSamples jfc::enhancements::graphics_task_cameras(
     return {};
 }
 
+ultramodern::renderer::GraphicsTaskMetadata jfc::enhancements::graphics_task_metadata(uint8_t *rdram, uint32_t task) {
+    ultramodern::renderer::GraphicsTaskMetadata metadata;
+    metadata.cameras = graphics_task_cameras(rdram, task);
+    {
+        std::lock_guard lock(allocation_generations_mutex);
+        metadata.textureScrolls = texture_scrolls;
+    }
+    const uint32_t root = uint32_t(MEM_W(0x30, task)) & 0x03FFFFFFU;
+    const uint32_t capacity = uint32_t(MEM_W(0, 0x800FD7DCU));
+    std::lock_guard lock(camera_samples_mutex);
+    for (uint32_t bank = 0; bank < 2; ++bank) {
+        const uint32_t base = uint32_t(MEM_W(bank * 4, 0x800FB400U)) & 0x03FFFFFFU;
+        if (root >= base && uint64_t(root - base) < uint64_t(capacity) * 8) {
+            metadata.matrices = matrix_generations[bank];
+            metadata.matrixGenerationsComplete = matrix_generations_complete[bank];
+            break;
+        }
+    }
+    return metadata;
+}
+
 const char* jfc::enhancements::try_publish_native_frame_time(uint8_t* rdram) noexcept {
     if (rdram == nullptr) {
         return "missing RDRAM";
@@ -1318,14 +1471,14 @@ const char* jfc::enhancements::try_publish_native_frame_time(uint8_t* rdram) noe
     if (cadence < 1 || cadence > 3) {
         return "invalid native NTSC presentation cadence";
     }
-    if (bank < 0 || bank > 1 || capacity < 3 || capacity > 0x100000) {
+    if (bank < 0 || bank > 1 || capacity < 4 || capacity > 0x100000) {
         return "invalid native display-list allocation";
     }
     const uint32_t base = static_cast<uint32_t>(MEM_W(bank * 4, 0x800FB400U));
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, 0x800FB408U));
     const uint32_t bytes = static_cast<uint32_t>(capacity) * 8U;
     if ((base & 7U) || (cursor & 7U) || !valid_rdram_address(base, bytes) ||
-        cursor < base || cursor - base > bytes - 24U) {
+        cursor < base || cursor - base > bytes - 32U) {
         return "native display-list cursor exceeds allocation";
     }
 
@@ -1333,6 +1486,8 @@ const char* jfc::enhancements::try_publish_native_frame_time(uint8_t* rdram) noe
         NativeGfxCommand{RT64_HOOK_MAGIC_NUMBER, 0x50000064U},
         NativeGfxCommand{0x64000000U | G_EX_SETREFRESHRATE_V1,
             60U / cadence},
+
+        NativeGfxCommand{0x64000000U | G_EX_SETNEARCLIPPING_V1, G_EX_ENABLED},
         NativeGfxCommand{RT64_HOOK_MAGIC_NUMBER, 0x60000000U},
     };
     append_gfx_commands(rdram, 0x800FB408U, commands);
@@ -1340,6 +1495,8 @@ const char* jfc::enhancements::try_publish_native_frame_time(uint8_t* rdram) noe
 }
 
 extern "C" void jfc_publish_native_frame_time(uint8_t* rdram) {
+
+    ultramodern::poll_pending_events(rdram);
     if (const char* error = jfc::enhancements::try_publish_native_frame_time(rdram)) {
         std::fprintf(stderr, "JFC native frame time: %s ticks=%d cadence=%u ntsc=%d bank=%d capacity=%d\n",
             error, rdram ? MEM_W(0, 0x800A3374U) : -1,
@@ -1350,31 +1507,50 @@ extern "C" void jfc_publish_native_frame_time(uint8_t* rdram) {
         std::fflush(stderr);
         std::exit(EXIT_FAILURE);
     }
+    ultramodern::set_audio_activity(jfc::modernization::audio_activity(rdram));
 
     std::lock_guard lock(camera_samples_mutex);
     camera_samples[size_t(MEM_W(0, 0x800FD7C0U))].clear();
     camera_samples_complete[size_t(MEM_W(0, 0x800FD7C0U))] = true;
+    matrix_generations[size_t(MEM_W(0, 0x800FD7C0U))].clear();
+    matrix_generations_complete[size_t(MEM_W(0, 0x800FD7C0U))] = true;
 }
 
 extern "C" void jfc_request_cutscene_skip(uint8_t* rdram, recomp_context* ctx) {
     constexpr uint32_t start_button = 0x1000U;
-    constexpr uint32_t gameplay_mode_address = 0x800FD7C4U;
-    if (!cutscene_skipping.load(std::memory_order_relaxed)) {
+    constexpr uint32_t skip_buttons = start_button | jfc::modern_input::cutscene_skip;
+    if (!cutscene_skipping.load(std::memory_order_relaxed) ||
+        (static_cast<uint32_t>(ctx->r17) & skip_buttons) == 0) {
         return;
     }
-    const bool gameplay_active = MEM_W(0, gameplay_mode_address) == 0;
-    const bool sequence_active = gameplay_active &&
+    const int engine_mode = MEM_W(0, gameplay_mode_address);
+    const bool gameplay_active = engine_mode == 0;
+    bool sequence_camera = false;
+    if (gameplay_active) {
+        for (unsigned view = 0; view < 4; ++view)
+            sequence_camera |= MEM_W(view * 4, animation_camera_address) != 0;
+    }
+    const bool sequence_active = sequence_camera &&
         MEM_W(0, 0x800A74BCU) != 0 &&
-        MEM_W(0, 0x800A74D4U) != 0 &&
-        MEM_W(0, 0x801045B8U) != 0;
+        MEM_W(0, 0x800A74D4U) != 0;
     const bool object_active = gameplay_active && ctx->r2 != 0;
-    if ((static_cast<uint32_t>(ctx->r17) & start_button) == 0 ||
-        (!sequence_active && !object_active)) {
+    if (!sequence_active && !object_active) {
         return;
     }
     sequence_skip_pending = sequence_active && !object_active;
     object_skip_pending = object_active;
-    ctx->r17 = static_cast<uint32_t>(ctx->r17) & ~start_button;
+
+    ctx->r17 = static_cast<uint32_t>(ctx->r17) & ~skip_buttons;
+}
+
+extern "C" void jfc_request_travel_skip(uint8_t* rdram, recomp_context* ctx) {
+
+    constexpr uint32_t skip_buttons = 0x1000U | jfc::modern_input::cutscene_skip;
+    const uint32_t pressed = static_cast<uint32_t>(ctx->r2);
+    if (!cutscene_skipping.load(std::memory_order_relaxed) ||
+        (pressed & skip_buttons) == 0) return;
+    ctx->r2 = pressed | 0x8000U;
+
 }
 
 extern "C" void jfc_apply_cutscene_skip(uint8_t* rdram, recomp_context* ctx) {
@@ -1426,6 +1602,20 @@ void jfc::enhancements::set_output_aspect_ratio(float aspect_ratio) {
         ? aspect_ratio
         : 4.0f / 3.0f;
     output_aspect_ratio.store(valid_aspect, std::memory_order_relaxed);
+}
+
+extern "C" float jfc_culling_horizontal_tangent(uint8_t* rdram) {
+    if (rdram == nullptr) throw std::runtime_error("Missing camera projection memory");
+
+    const float x = read_rdram_float(rdram, 0x800FAA70U);
+    const float w = -read_rdram_float(rdram, 0x800FAA9CU);
+    const float aspect = output_aspect_ratio.load(std::memory_order_relaxed);
+    const float tangent = (w / x) * std::max(1.0f, aspect / (4.0f / 3.0f));
+    if (!std::isfinite(x) || x <= 0 || !std::isfinite(w) || w <= 0 ||
+        !std::isfinite(tangent) || tangent <= 0) {
+        throw std::runtime_error("Invalid camera visibility projection");
+    }
+    return tangent;
 }
 
 extern "C" void jfc_begin_single_player_weapon_panel(
@@ -1561,6 +1751,7 @@ extern "C" void jfc_tag_owned_sprite_matrix(
     const uint32_t id = (sprite_owner >> 2) & MatrixTagIdMask;
     MEM_W(0, command) = withMatrixTagW0(w0, id);
     MEM_W(4, command) = withMatrixTagW1(w1, id);
+    capture_matrix_generation(rdram, w1, sprite_owner);
 }
 
 extern "C" void jfc_begin_queued_pickup_scissor(
@@ -1918,6 +2109,26 @@ extern "C" void jfc_route_interaction_buttons(recomp_context* ctx) {
     if ((ctx->r2 & jfc::modern_input::interact) != 0) {
         ctx->r2 |= jfc::modern_input::a;
     }
+}
+
+static int32_t robot_pitch_input(uint8_t* rdram, uint32_t sidekick, int32_t input) {
+    if (!modern_controls.load(std::memory_order_relaxed)) return input;
+    if (!valid_rdram_address(sidekick, 0x28)) return input;
+    const uint32_t object = uint32_t(MEM_W(0x24, sidekick));
+    if (!valid_rdram_address(object, 0x6C)) return input;
+    const uint32_t player = uint32_t(MEM_W(0x68, object));
+    if (!valid_rdram_address(player, 0x10E) || MEM_BU(0x10D, player) != 1) return input;
+    return int32_t(0U - uint32_t(input));
+}
+
+extern "C" void jfc_route_robot_pitch(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = robot_pitch_input(rdram, uint32_t(ctx->r16), int32_t(ctx->r3));
+}
+
+extern "C" void jfc_route_robot_target_pitch(uint8_t* rdram, recomp_context* ctx) {
+
+    const uint32_t sidekick = uint32_t(MEM_W(0x19C, ctx->r29));
+    ctx->r16 = robot_pitch_input(rdram, sidekick, int32_t(ctx->r16));
 }
 
 extern "C" void jfc_route_modern_input(uint8_t* rdram, recomp_context* ctx) {
@@ -2391,7 +2602,8 @@ extern "C" void jfc_prepare_modern_airborne_travel(
     ModernPlayerScope* const scope = active_scope_for_player(rdram, player);
     if (!modern_controls.load(std::memory_order_relaxed) || scope == nullptr ||
         !scope->input.active || scope->object != static_cast<uint32_t>(ctx->r4) ||
-        !scope->axes.apply_isolated_l2_movement || MEM_BU(0x568, player) != 3U) {
+        (!scope->axes.apply_isolated_l2_movement && MEM_BU(0x14A, player) == 0) ||
+        MEM_BU(0x568, player) != 3U) {
         return;
     }
     ModernActionTravel& travel = modern_action_travel[MEM_BU(0, player)];
@@ -2423,6 +2635,46 @@ extern "C" void jfc_prepare_modern_airborne_travel(
     travel = {player, scope->object, heading, scope->facing_before,
               scope->yaw_before, true};
 
+}
+
+extern "C" void jfc_begin_modern_flight_steering(
+    uint8_t* rdram, recomp_context* ctx, uint32_t player, uint32_t timestep_bits
+) {
+    ModernPlayerScope* const scope = active_scope_for_player(rdram, player);
+    if (ctx == nullptr || !modern_controls.load(std::memory_order_relaxed) ||
+        scope == nullptr || !scope->input.active || MEM_BU(0x568, player) != 3U ||
+        MEM_BU(0x14A, player) == 0) return;
+
+    recomp_context adoption = *ctx;
+    adoption.r4 = scope->object;
+    adoption.r5 = player;
+    jfc_prepare_modern_airborne_travel(rdram, &adoption);
+    ModernActionTravel& travel = modern_action_travel[MEM_BU(0, player)];
+    if (!travel.active || travel.owner != player || travel.object != scope->object) return;
+
+    const float elapsed = std::bit_cast<float>(timestep_bits);
+    if (std::isfinite(elapsed) && elapsed >= 0.0f)
+        stage_modern_direct_look(rdram, *scope, MEM_BU(0, player), elapsed);
+
+    ctx->r4 = static_cast<int32_t>(travel.movement_heading);
+    if (scope->axes.movement_x == 0 && scope->axes.movement_y == 0)
+        ctx->r5 = ctx->r4;
+}
+
+extern "C" void jfc_end_modern_flight_steering(
+    uint8_t* rdram, recomp_context* ctx, uint32_t player
+) {
+    ModernPlayerScope* const scope = active_scope_for_player(rdram, player);
+    if (ctx == nullptr || !modern_controls.load(std::memory_order_relaxed) ||
+        scope == nullptr || !scope->input.active || MEM_BU(0x568, player) != 3U ||
+        MEM_BU(0x14A, player) == 0) return;
+    ModernActionTravel& travel = modern_action_travel[MEM_BU(0, player)];
+    if (!travel.active || travel.owner != player || travel.object != scope->object) return;
+    travel.movement_heading = static_cast<int16_t>(ctx->r2);
+    travel.yaw = scope->direct_yaw_pending ? scope->direct_yaw : scope->yaw_before;
+    travel.facing = scope->direct_yaw_pending ? scope->direct_yaw : scope->facing_before;
+
+    ctx->r2 = static_cast<int32_t>(travel.yaw);
 }
 
 extern "C" void jfc_select_modern_action_travel_heading(
@@ -2522,7 +2774,8 @@ extern "C" void jfc_finalize_modern_character_dispatch(
     }
     const uint8_t state = MEM_BU(0x568, player);
 
-    const bool crouched_attached_camera = state <= 2U || state == 5U;
+    const bool crouched_attached_camera = state <= 2U || state == 5U ||
+        (state == 3U && MEM_BU(0x14A, player) != 0);
     if (crouched_attached_camera && scope->direct_yaw_pending &&
         valid_rdram_address(scope->object, sizeof(int16_t))) {
         MEM_H(0, scope->object) = scope->direct_yaw;
@@ -2594,7 +2847,8 @@ extern "C" void jfc_finalize_modern_character_dispatch(
 
     if (valid_rdram_address(travel.object, sizeof(int16_t))) {
         MEM_H(0, travel.object) =
-            (state <= 2U && scope->direct_yaw_pending)
+            (scope->direct_yaw_pending &&
+             (state <= 2U || (state == 3U && MEM_BU(0x14A, player) != 0)))
                 ? scope->direct_yaw
                 : travel.facing;
     }
@@ -2988,6 +3242,9 @@ struct jfc::state::PreparedEnhancements::Impl {
     ultramodern::renderer::CameraSample float_camera;
     uint32_t producer = 0;
     uint64_t generation = 1;
+    jfc::AllocationGenerations allocations;
+    std::array<std::vector<ultramodern::renderer::MatrixGeneration>, 2> matrices;
+    std::array<bool, 2> matrices_complete{false, false};
 };
 
 namespace {
@@ -3000,13 +3257,14 @@ template<class Archive, class Sample> void transfer_camera_sample(Archive& a, Sa
 void validate_camera_sample(const ultramodern::renderer::CameraSample& sample, uint64_t generation,
     bool scratch = false) {
     if (scratch && sample.cameraId == 0) {
-        if (sample.matrixAddress || sample.generation ||
+        if (sample.matrixAddress || sample.generation || sample.billboardScale != 0 ||
             std::any_of(sample.view.begin(), sample.view.end(), [](float v) { return v != 0; }) ||
             std::any_of(sample.projection.begin(), sample.projection.end(), [](float v) { return v != 0; }))
             throw std::runtime_error("Invalid empty saved camera producer");
         return;
     }
     if (!sample.cameraId || sample.cameraId > 0x10000000U ||
+        !std::isfinite(sample.billboardScale) || sample.billboardScale < 0 ||
         !sample.generation || sample.generation > generation ||
         (sample.matrixAddress & 7U) || sample.matrixAddress > 0x800000U - 64 ||
         (scratch && sample.matrixAddress != 0))
@@ -3117,31 +3375,47 @@ jfc::state::Bytes jfc::state::capture_enhancements() {
     state.revision_current = observed_modern_controls_revision == modern_controls_revision.load();
     state.pause_tick = instant_pause_menu_tick_requested.load();
     {
-        std::lock_guard lock(camera_samples_mutex);
+        const std::scoped_lock lock(allocation_generations_mutex, camera_samples_mutex);
         for (size_t bank = 0; bank < state.cameras.size(); ++bank)
             state.cameras[bank] = {camera_samples[bank], camera_samples_complete[bank]};
         state.float_camera = camera_float_sample;
         state.producer = camera_producer;
         state.generation = camera_generation;
+        state.allocations = allocation_generations;
+        state.matrices = matrix_generations;
+        state.matrices_complete = matrix_generations_complete;
     }
     validate_enhancement_state(state);
     validate_camera_state(state);
-    Writer out; out.u32(2); transfer_enhancement_state(out, state);
+    Writer out; out.u32(4); transfer_enhancement_state(out, state);
     out.fields(state.generation, state.producer);
     transfer_camera_sample(out, state.float_camera);
     for (auto& bank : state.cameras) {
         out.fields(bank.complete, uint32_t(bank.entries.size()));
         for (auto& sample : bank.entries) transfer_camera_sample(out, sample);
     }
+    state.allocations.validate();
+    const size_t generation_offset = out.bytes.size();
+    out.fields(state.allocations.serial, uint32_t(state.allocations.ranges.size()));
+    for (auto &range : state.allocations.ranges) out.fields(range.begin, range.end, range.generation);
+    for (size_t bank = 0; bank < state.matrices.size(); ++bank) {
+        out.fields(state.matrices_complete[bank], uint32_t(state.matrices[bank].size()));
+        for (auto &matrix : state.matrices[bank]) out.fields(matrix.address, matrix.generation);
+    }
+
+    out.fields(state.float_camera.billboardScale);
+    for (auto &bank : state.cameras)
+        for (auto &sample : bank.entries) out.fields(sample.billboardScale);
+    out.u32(uint32_t(out.bytes.size() - generation_offset));
     return std::move(out.bytes);
 }
 jfc::state::PreparedEnhancements::PreparedEnhancements(std::span<const uint8_t> saved)
     : impl(std::make_unique<Impl>()) {
     Reader in(saved);
     const auto schema = in.u32();
-    if (schema != 1 && schema != 2) throw std::runtime_error("Unsupported enhancement state schema");
+    if (schema < 1 || schema > 4) throw std::runtime_error("Unsupported enhancement state schema");
     transfer_enhancement_state(in, *impl);
-    if (schema == 2) {
+    if (schema >= 2) {
         in.fields(impl->generation, impl->producer);
         transfer_camera_sample(in, impl->float_camera);
         for (auto& bank : impl->cameras) {
@@ -3155,6 +3429,39 @@ jfc::state::PreparedEnhancements::PreparedEnhancements(std::span<const uint8_t> 
                 bank.entries.push_back(sample);
             }
         }
+    }
+    if (schema >= 3) {
+        const size_t generation_bytes = in.remaining_bytes();
+        in.fields(impl->allocations.serial);
+        const uint32_t count = in.u32();
+        if (count > jfc::AllocationGenerations::MemorySize || count > in.remaining_bytes() / 16)
+            throw std::runtime_error("Oversized saved allocation generation table");
+        impl->allocations.ranges.resize(count);
+        for (auto &range : impl->allocations.ranges) in.fields(range.begin, range.end, range.generation);
+        impl->allocations.validate();
+        for (size_t bank = 0; bank < impl->matrices.size(); ++bank) {
+            in.fields(impl->matrices_complete[bank]);
+            const uint32_t matrices = in.u32();
+            if (matrices > 0x800000U / 8 || matrices > in.remaining_bytes() / 12)
+                throw std::runtime_error("Oversized saved matrix generation bank");
+            impl->matrices[bank].resize(matrices);
+            uint32_t previous = 0;
+            for (uint32_t i = 0; i < matrices; ++i) {
+                auto &matrix = impl->matrices[bank][i];
+                in.fields(matrix.address, matrix.generation);
+                if ((matrix.address & 7U) || matrix.address > 0x800000U - 64 ||
+                    (i && matrix.address <= previous) || matrix.generation > impl->allocations.serial)
+                    throw std::runtime_error("Invalid saved matrix generation ownership");
+                previous = matrix.address;
+            }
+        }
+        if (schema >= 4) {
+            in.fields(impl->float_camera.billboardScale);
+            for (auto &bank : impl->cameras)
+                for (auto &sample : bank.entries) in.fields(sample.billboardScale);
+        }
+        const size_t consumed = generation_bytes - in.remaining_bytes();
+        if (in.u32() != consumed) throw std::runtime_error("Invalid allocation generation section length");
     }
 
     in.end(); validate_enhancement_state(*impl); validate_camera_state(*impl);
@@ -3177,7 +3484,7 @@ void jfc::state::PreparedEnhancements::commit() noexcept {
         ? modern_controls_revision.load() : 0;
     instant_pause_menu_tick_requested.store(impl->pause_tick);
     {
-        std::lock_guard lock(camera_samples_mutex);
+        const std::scoped_lock lock(allocation_generations_mutex, camera_samples_mutex);
         for (size_t bank = 0; bank < impl->cameras.size(); ++bank) {
             camera_samples[bank].swap(impl->cameras[bank].entries);
             camera_samples_complete[bank] = impl->cameras[bank].complete;
@@ -3185,6 +3492,10 @@ void jfc::state::PreparedEnhancements::commit() noexcept {
         camera_float_sample = impl->float_camera;
         camera_producer = impl->producer;
         camera_generation = impl->generation;
+        std::swap(allocation_generations, impl->allocations);
+        texture_scrolls.clear();
+        matrix_generations.swap(impl->matrices);
+        matrix_generations_complete = impl->matrices_complete;
     }
     impl->committed = true;
 }

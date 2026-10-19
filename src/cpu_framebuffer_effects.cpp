@@ -10,8 +10,7 @@ namespace {
     uint32_t imageAddress = 0;
     uint32_t imagePixels = 0;
     bool active = false;
-    struct RefractionSample { uint32_t source; uint16_t tint; bool constant; };
-    std::vector<RefractionSample> refractionSamples;
+    std::vector<jfc_refraction_sample> refractionSamples;
     uint32_t refractionFramebuffer = 0;
     bool refractionCaptured = false;
 
@@ -58,32 +57,21 @@ extern "C" void jfc_cpu_effect_add(uint32_t address, int32_t r, int32_t g, int32
     if (imagePixel(address, index)) effects.add(index, r, g, b, alpha != 0);
 }
 
-extern "C" void jfc_cpu_effect_refraction(uint8_t* rdram, uint32_t descriptors, uint32_t framebuffer) {
-    if (!active) return;
-
-    constexpr uint32_t Pixels = 320U * 240U;
-    physical(descriptors, Pixels * 2);
-    physical(framebuffer, Pixels * 2);
-    refractionFramebuffer = physical(framebuffer, Pixels * 2);
+extern "C" jfc_refraction_capture jfc_cpu_effect_refraction_begin(
+        uint32_t descriptors, uint32_t framebuffer, uint32_t bytes) {
+    if (!active) return {nullptr, 0};
+    if (bytes == 0 || (bytes & 3U))
+        throw std::invalid_argument("CPU refraction sample span must contain complete words");
+    physical(descriptors, bytes);
+    refractionFramebuffer = physical(framebuffer, bytes);
     refractionCaptured = true;
-    refractionSamples.resize(Pixels);
-    for (uint32_t i = 0; i < Pixels; ++i) {
-        const uint32_t d = uint16_t(MEM_H(i * 2, descriptors));
-        if (d == 0) {
-            refractionSamples[i] = {0, 0, true};
-            continue;
-        }
-        const int32_t delta = (int32_t(d >> 11) - 16) +
-            (int32_t((d >> 1) & 31U) - 16) * 320;
-        const uint32_t source = framebuffer + i * 2 + uint32_t(delta * 2);
-        const uint16_t tint = uint16_t((d & 0x7C0U) + ((d & 0x7C0U) >> 5));
-        uint32_t input;
-        if (imagePixel(source, input)) refractionSamples[i] = {input, tint, false};
-        else {
-            physical(source, 2);
-            refractionSamples[i] = {uint16_t(MEM_H(0, source)), tint, true};
-        }
-    }
+
+    refractionSamples.assign(bytes / 2, {});
+    return {refractionSamples.data(), uint32_t(refractionSamples.size())};
+}
+
+extern "C" void jfc_cpu_effect_refraction_bounds_error(void) {
+    throw std::out_of_range("Native refraction sample exceeds its captured span");
 }
 
 extern "C" void jfc_cpu_effect_refraction_copy(uint32_t destination, uint32_t bytes) {
@@ -99,7 +87,9 @@ extern "C" void jfc_cpu_effect_refraction_copy(uint32_t destination, uint32_t by
         uint32_t output;
         if (imagePixel(destination + i * 2, output)) {
             const auto &sample = refractionSamples[first + i];
-            effects.refract(output, sample.source, sample.tint, sample.constant);
+            uint32_t source;
+            const bool constant = sample.address == 0 || !imagePixel(sample.address, source);
+            effects.refract(output, constant ? sample.value : source, sample.tint, constant);
         }
     }
 }

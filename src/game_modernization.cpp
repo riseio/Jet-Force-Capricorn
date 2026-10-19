@@ -12,9 +12,11 @@
 #include <limits>
 #include <mutex>
 #include <span>
+#include <string_view>
 #include <system_error>
 #include <vector>
 #include <utility>
+#include <stdexcept>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -25,9 +27,13 @@
 #endif
 
 #include "jfc_modernization.hpp"
+#include "weapon_qol.hpp"
+#include "ultramodern/audio_activity.hpp"
 #include "native_context.hpp"
 #include "jfc_enhancements.hpp"
 #include "jfc_recomp.h"
+#include "native_rom_data.hpp"
+#include "metadata_writer.hpp"
 #include "save_state_game.hpp"
 #include "save_state_codec.hpp"
 
@@ -43,7 +49,7 @@ constexpr size_t scene_key_capacity = 64;
 constexpr size_t binding_count = 8;
 constexpr std::array<uint8_t, 8> metadata_magic{
     'J', 'F', 'C', 'Q', 'O', 'L', 0, 0};
-constexpr uint32_t metadata_version = 5;
+constexpr uint32_t metadata_version = 6;
 constexpr uint64_t legacy_scene_key_bit = UINT64_C(1) << 63;
 constexpr uint64_t maximum_scene_identity_key = UINT64_C(1) << 62;
 constexpr uint32_t gameplay_pointer_address = 0x800FD7D4U;
@@ -160,6 +166,9 @@ struct TrackedShipPart {
 struct SlotMetadata {
     std::array<uint16_t, tribal_level_count> rescued_tribals{};
 
+    std::array<std::array<uint16_t, tribal_level_count>, canonical_region_count>
+        regional_rescues{};
+
     std::array<uint64_t, scene_key_capacity> seen_landings{};
     std::array<uint64_t, scene_key_capacity> seen_travel{};
     bool final_access_granted = false;
@@ -192,8 +201,22 @@ std::array<SlotMetadata, save_slot_count> slots{};
 std::array<GameBinding, binding_count> bindings{};
 std::filesystem::path metadata_path;
 std::mutex metadata_mutex;
+
+struct TribalReconciliation {
+    uint32_t game = 0;
+    unsigned region = 0;
+    uint64_t revision = 0;
+    uint64_t option_revision = 0;
+    uint32_t counts = 0;
+    int total = 0;
+    bool complete = false;
+    std::array<uint16_t, tribal_level_count> rescued{}, killed{};
+};
+std::array<TribalReconciliation, binding_count> tribal_reconciliation{};
+uint64_t metadata_revision = 1;
+std::atomic<uint64_t> tribal_option_revision{1};
 std::atomic_bool invulnerable_tribals{false};
-std::atomic_bool persistent_tribal_rescues{false};
+std::atomic_bool persistent_tribal_rescues{true};
 std::atomic<jfc::modernization::FinalTribalRequirement> final_requirement{
     jfc::modernization::FinalTribalRequirement::Original};
 std::atomic_bool skip_seen_landings{false};
@@ -203,6 +226,8 @@ std::atomic_bool double_ammo_pickups{false};
 std::atomic_bool unlimited_lives{true};
 std::atomic_bool mission_complete_refill{true};
 std::atomic_bool double_enemy_drops{true};
+std::atomic_bool double_robot_mission_time{false};
+std::atomic_bool hide_companion{false};
 std::atomic_bool fast_throws{true};
 std::atomic_bool halo_health{false};
 std::atomic_bool health_reset_requested{false};
@@ -214,6 +239,12 @@ struct HealthRecharge {
 };
 thread_local HealthRecharge health_recharge{};
 std::atomic_bool persistent_dropped_pickups{false};
+std::atomic_bool persistent_corpses{false};
+
+std::array<uint32_t, 0x800000 / 128> completed_corpses{};
+
+std::array<uint32_t, 0x800000 / 128> retired_corpses{};
+thread_local uint32_t corpse_retirement_object = 0;
 std::atomic_bool skip_seen_character_travel{false};
 std::atomic<jfc::modernization::SprintMode> sprint_mode{
     jfc::modernization::SprintMode::Off};
@@ -234,9 +265,10 @@ thread_local QuickGrenade quick_grenade{};
 
 thread_local std::array<int32_t, 3> grenade_saved_input{};
 thread_local bool grenade_input_scoped = false;
-thread_local int pending_save_slot = -1;
-thread_local uint32_t pending_save_game = 0;
-thread_local int pending_clear_slot = -1;
+
+int pending_save_slot = -1;
+uint32_t pending_save_game = 0;
+int pending_clear_slot = -1;
 thread_local bool actions_initialized = false;
 thread_local bool previous_sprint_action = false;
 thread_local bool previous_quick_switch_action = false;
@@ -269,7 +301,9 @@ constexpr size_t version_three_slot_size =
     tribal_level_count * sizeof(uint16_t) +
     scene_key_capacity * sizeof(uint64_t) * 2 + 1;
 constexpr size_t version_four_slot_size = version_three_slot_size + 12;
-constexpr size_t serialized_slot_size = version_four_slot_size + 3;
+constexpr size_t version_five_slot_size = version_four_slot_size + 3;
+constexpr size_t serialized_slot_size = version_five_slot_size +
+    canonical_region_count * tribal_level_count * sizeof(uint16_t);
 constexpr size_t version_two_slot_size =
     tribal_level_count * sizeof(uint16_t) +
     scene_key_capacity * sizeof(uint16_t) * 2 + 1;
@@ -282,6 +316,8 @@ constexpr size_t version_one_payload_size =
     save_slot_count * version_one_slot_size;
 constexpr size_t serialized_header_size = metadata_magic.size() + 3 * sizeof(uint32_t);
 constexpr size_t serialized_file_size = serialized_header_size + serialized_payload_size;
+constexpr size_t version_five_payload_size = save_slot_count * version_five_slot_size;
+constexpr size_t version_five_file_size = serialized_header_size + version_five_payload_size;
 constexpr size_t version_four_payload_size = save_slot_count * version_four_slot_size;
 constexpr size_t version_four_file_size = serialized_header_size + version_four_payload_size;
 constexpr size_t version_three_payload_size = save_slot_count * version_three_slot_size;
@@ -377,6 +413,8 @@ std::vector<uint8_t> serialize_metadata() {
         for (const auto& character : slot.weapon_slots)
             payload.insert(payload.end(), character.begin(), character.end());
         payload.insert(payload.end(), slot.throwables.begin(), slot.throwables.end());
+        for (const auto& region : slot.regional_rescues)
+            for (uint16_t rescued : region) append_u16(payload, rescued);
     }
 
     std::vector<uint8_t> bytes;
@@ -391,6 +429,7 @@ std::vector<uint8_t> serialize_metadata() {
 
 bool deserialize_metadata(std::span<const uint8_t> bytes) {
     if ((bytes.size() != serialized_file_size &&
+         bytes.size() != version_five_file_size &&
          bytes.size() != version_four_file_size &&
          bytes.size() != version_three_file_size &&
          bytes.size() != version_two_file_size &&
@@ -411,6 +450,9 @@ bool deserialize_metadata(std::span<const uint8_t> bytes) {
     switch (version) {
     case metadata_version:
         expected_payload_size = serialized_payload_size;
+        break;
+    case 5U:
+        expected_payload_size = version_five_payload_size;
         break;
     case 4U:
         expected_payload_size = version_four_payload_size;
@@ -500,6 +542,9 @@ bool deserialize_metadata(std::span<const uint8_t> bytes) {
             if (cursor == bytes.size() || !jfc::modernization::is_quick_throwable(bytes[cursor])) return false;
             weapon = bytes[cursor++];
         }
+        if (version >= 6U) for (auto& region : slot.regional_rescues)
+            for (auto& rescued : region)
+                if (!read_u16(bytes, cursor, rescued)) return false;
     }
     if (cursor != bytes.size()) {
         return false;
@@ -512,6 +557,7 @@ bool read_file(const std::filesystem::path& path, std::vector<uint8_t>& bytes) {
     std::error_code error;
     const uintmax_t size = std::filesystem::file_size(path, error);
     if (error || (size != serialized_file_size &&
+                  size != version_five_file_size &&
                   size != version_four_file_size &&
                   size != version_three_file_size &&
                   size != version_two_file_size &&
@@ -524,72 +570,40 @@ bool read_file(const std::filesystem::path& path, std::vector<uint8_t>& bytes) {
                       static_cast<std::streamsize>(bytes.size())).good();
 }
 
-bool sync_file(const std::filesystem::path& path) {
-#ifdef _WIN32
-    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-    const bool ok = FlushFileBuffers(file) != 0;
-    CloseHandle(file);
-    return ok;
-#else
-    const int file = open(path.c_str(), O_RDONLY | O_CLOEXEC);
-    if (file < 0) {
-        return false;
-    }
-    const bool ok = fsync(file) == 0;
-    close(file);
-    return ok;
-#endif
-}
+std::atomic<void (*)(const char*)> metadata_error_reporter{nullptr};
 
-bool replace_file(const std::filesystem::path& temporary,
-                  const std::filesystem::path& destination) {
-#ifdef _WIN32
-    return MoveFileExW(temporary.c_str(), destination.c_str(),
-        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    std::error_code error;
-    std::filesystem::rename(temporary, destination, error);
-    if (error) {
-        return false;
-    }
-    const int directory = open(destination.parent_path().c_str(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (directory >= 0) {
-        fsync(directory);
-        close(directory);
-    }
-    return true;
-#endif
+jfc::modernization::MetadataWriter& metadata_writer() {
+    static jfc::modernization::MetadataWriter writer(jfc::files::write_atomic,
+        [](const char* error) {
+            if (auto report = metadata_error_reporter.load(std::memory_order_acquire))
+                report(error);
+        });
+    return writer;
 }
 
 bool persist_locked() {
+    ++metadata_revision;
     if (metadata_path.empty()) {
         return false;
     }
-    const std::vector<uint8_t> bytes = serialize_metadata();
-    std::filesystem::path temporary = metadata_path;
-    temporary += ".tmp";
-    {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        output.write(reinterpret_cast<const char*>(bytes.data()),
-                     static_cast<std::streamsize>(bytes.size()));
-        output.flush();
-        if (!output.good()) {
-            std::fprintf(stderr, "Failed to write QoL save metadata: %s\n",
-                         temporary.string().c_str());
-            return false;
-        }
+    for (const auto& binding : bindings) {
+        if (!binding.game || binding.slot < 0 || binding.slot >= int(slots.size())) continue;
+        auto& saved = slots[size_t(binding.slot)].regional_rescues;
+        for (size_t region = 0; region < saved.size(); ++region)
+            for (size_t room = 0; room < tribal_level_count; ++room)
+                saved[region][room] |= binding.metadata.regional_rescues[region][room];
     }
-    if (!sync_file(temporary) || !replace_file(temporary, metadata_path)) {
-        std::fprintf(stderr, "Failed to commit QoL save metadata: %s\n",
-                     metadata_path.string().c_str());
+    for (auto& binding : bindings)
+        if (binding.game && binding.slot >= 0 && binding.slot < int(slots.size()))
+            binding.metadata = slots[size_t(binding.slot)];
+    try {
+        metadata_writer().submit(metadata_path, serialize_metadata());
+        return true;
+    }
+    catch (const std::exception& error) {
+        std::fprintf(stderr, "Failed to queue QoL save metadata: %s\n", error.what());
         return false;
     }
-    return true;
 }
 
 GameBinding* find_binding(uint32_t game) {
@@ -604,13 +618,20 @@ GameBinding* find_binding(uint32_t game) {
     return nullptr;
 }
 
-GameBinding* bind_game(uint32_t game, int slot) {
+GameBinding* bind_game(uint8_t* rdram, uint32_t game, int slot) {
+    ++metadata_revision;
     GameBinding* binding = find_binding(game);
     if (binding == nullptr) {
-        const auto available = std::find_if(bindings.begin(), bindings.end(),
+        auto available = std::find_if(bindings.begin(), bindings.end(),
             [](const GameBinding& candidate) { return candidate.game == 0; });
         if (available == bindings.end()) {
-            return nullptr;
+            const auto active = uint32_t(MEM_W(0, gameplay_pointer_address));
+
+            available = std::find_if(bindings.begin(), bindings.end(), [&](const GameBinding& candidate) {
+                return candidate.slot >= 0 && candidate.game != active && candidate.game != pending_save_game;
+            });
+            if (available == bindings.end())
+                throw std::runtime_error("QoL save bindings exhausted by live unsaved owners");
         }
         binding = &*available;
     }
@@ -635,9 +656,10 @@ GameBinding* active_binding(uint8_t* rdram) {
         return nullptr;
     }
     if (GameBinding* binding = find_binding(game)) {
-        return binding;
+
+        if (binding->slot == -1 || binding->slot == game_slot(rdram, game) || game == pending_save_game) return binding;
     }
-    return bind_game(game, game_slot(rdram, game));
+    return bind_game(rdram, game, game_slot(rdram, game));
 }
 
 uint8_t current_level_id(uint8_t* rdram) {
@@ -645,7 +667,7 @@ uint8_t current_level_id(uint8_t* rdram) {
     return valid_rdram_address(level, 0x104) ? MEM_BU(0x103, level) : 0xFFU;
 }
 
-bool tribal_is_already_rescued(uint8_t* rdram, uint32_t actor) {
+bool tribal_has_completed_outcome(uint8_t* rdram, uint32_t actor) {
     if (!valid_rdram_address(actor, 0x65U)) {
         return false;
     }
@@ -653,12 +675,13 @@ bool tribal_is_already_rescued(uint8_t* rdram, uint32_t actor) {
     const uint32_t game = static_cast<uint32_t>(
         MEM_W(0, gameplay_pointer_address));
     if (level >= tribal_level_count ||
-        !valid_rdram_address(game, 0x5EU + level * 2U)) {
+        !valid_rdram_address(game, 0xDEU + level * 2U)) {
         return false;
     }
     const unsigned placement = MEM_BU(0x64, actor) & 0xFU;
     const uint16_t mask = static_cast<uint16_t>(1U << placement);
-    return (MEM_HU(0, game + 0x5CU + level * 2U) & mask) != 0;
+    return ((MEM_HU(0, game + 0x5CU + level * 2U) |
+             MEM_HU(0, game + 0xDCU + level * 2U)) & mask) != 0;
 }
 
 uint16_t legacy_sequence_key(uint8_t level, int32_t group) {
@@ -795,20 +818,30 @@ bool record_seen_sequence(
     return inserted;
 }
 
-void decrement_byte_if_nonzero(uint8_t* rdram, uint32_t address) {
-    const uint8_t value = MEM_BU(0, address);
-    if (value != 0) {
-        MEM_B(0, address) = value - 1;
-    }
+int tribal_region_total(uint8_t* rdram, unsigned region) {
+    const uint32_t table = uint32_t(MEM_W(0, tribal_table_pointer_address));
+    if (region >= canonical_region_count ||
+        !valid_rdram_address(table, canonical_region_count)) return 0;
+    return std::max(0, int(MEM_B(region, table)));
 }
 
-void restore_persistent_level(uint8_t* rdram, uint8_t level_id) {
+unsigned tribal_region(uint8_t* rdram) {
+    return uint16_t(MEM_HU(0, 0x800A3268U));
+}
+
+uint32_t tribal_counters(uint8_t* rdram, uint32_t game) {
+    return (uint32_t(MEM_BU(4, game)) << 16) |
+        (uint32_t(MEM_BU(5, game)) << 8) | uint32_t(MEM_BU(6, game));
+}
+
+void restore_persistent_region(uint8_t* rdram, unsigned region,
+                               int room = -1, unsigned placement = 0) {
     if (!persistent_tribal_rescues.load(std::memory_order_relaxed) ||
-        level_id >= tribal_level_count) {
+        region >= canonical_region_count) {
         return;
     }
     const uint32_t game = static_cast<uint32_t>(MEM_W(0, gameplay_pointer_address));
-    if (!valid_rdram_address(game, 0xDC + tribal_level_count * 2)) {
+    if (!valid_rdram_address(game, 0x334 + canonical_region_count * 8)) {
         return;
     }
     std::lock_guard lock(metadata_mutex);
@@ -817,33 +850,58 @@ void restore_persistent_level(uint8_t* rdram, uint8_t level_id) {
         return;
     }
 
-    const uint32_t rescue_address = game + 0x5CU + level_id * 2U;
-    const uint32_t killed_address = game + 0xDCU + level_id * 2U;
-    const uint16_t persistent = binding->metadata.rescued_tribals[level_id];
-    uint16_t rescued = MEM_HU(0, rescue_address);
-    uint16_t killed = MEM_HU(0, killed_address);
-    const uint16_t newly_rescued = persistent & ~rescued;
-    if (newly_rescued == 0) {
+    const int total = tribal_region_total(rdram, region);
+    const bool complete = total > 0 && MEM_BU(0x334 + region * 8, game) == total;
+    auto& cached = tribal_reconciliation[size_t(binding - bindings.data())];
+    const auto option_revision = tribal_option_revision.load(std::memory_order_relaxed);
+    if (room >= 0 && room < int(tribal_level_count) &&
+        cached.game == game && cached.region == region &&
+        cached.revision == metadata_revision && cached.option_revision == option_revision &&
+        cached.counts == tribal_counters(rdram, game) && cached.total == total &&
+        cached.complete == complete &&
+        cached.rescued[size_t(room)] == MEM_HU(0x5C + room * 2, game) &&
+        cached.killed[size_t(room)] == MEM_HU(0xDC + room * 2, game) &&
+        (!complete || (MEM_HU(0x5C + room * 2, game) & (1U << placement)) != 0)) {
         return;
     }
-    const uint16_t replaced_deaths = newly_rescued & killed;
-    rescued |= newly_rescued;
-    killed &= ~persistent;
-    MEM_H(0, rescue_address) = rescued;
-    MEM_H(0, killed_address) = killed;
-    for (unsigned bit = 0; bit < 16; ++bit) {
-        const uint16_t mask = static_cast<uint16_t>(1U << bit);
-        if ((newly_rescued & mask) == 0) {
-            continue;
+    int rescued_count = 0, killed_count = 0;
+    bool changed = false;
+    const bool current = region == tribal_region(rdram);
+    for (unsigned local = 0; local < tribal_level_count; ++local) {
+        const uint32_t rescue_address = game + 0x5CU + local * 2U;
+        const uint32_t killed_address = game + 0xDCU + local * 2U;
+        uint16_t rescued = MEM_HU(0, rescue_address) |
+            binding->metadata.regional_rescues[region][local];
+        if (complete && int(local) == room && placement < 16)
+            rescued |= uint16_t(1U << placement);
+        if (current && binding->metadata.regional_rescues[region][local] != rescued) {
+            binding->metadata.regional_rescues[region][local] = rescued;
+            changed = true;
         }
-        MEM_B(4, game) = MEM_BU(4, game) + 1;
-        if ((replaced_deaths & mask) != 0) {
-            decrement_byte_if_nonzero(rdram, game + 5);
-        }
-        else {
-            decrement_byte_if_nonzero(rdram, game + 6);
-        }
+        const uint16_t killed = complete ? 0 : uint16_t(MEM_HU(0, killed_address) & ~rescued);
+        MEM_H(0, rescue_address) = rescued;
+        MEM_H(0, killed_address) = killed;
+        cached.rescued[local] = rescued;
+        cached.killed[local] = killed;
+        rescued_count += std::popcount(rescued);
+        killed_count += std::popcount(killed);
     }
+    if (total > 0) {
+        MEM_B(4, game) = complete ? total : std::min(rescued_count, total);
+        MEM_B(5, game) = complete ? 0 : std::min(killed_count, total - int(MEM_BU(4, game)));
+        MEM_B(6, game) = total - MEM_BU(4, game) - MEM_BU(5, game);
+    }
+    if (changed && binding->slot >= 0) {
+        slots[static_cast<size_t>(binding->slot)] = binding->metadata;
+        persist_locked();
+    }
+    cached.game = game;
+    cached.region = region;
+    cached.revision = metadata_revision;
+    cached.option_revision = option_revision;
+    cached.counts = tribal_counters(rdram, game);
+    cached.total = total;
+    cached.complete = complete;
 }
 
 void record_rescue(uint8_t* rdram, uint8_t level_id, unsigned placement) {
@@ -852,7 +910,8 @@ void record_rescue(uint8_t* rdram, uint8_t level_id, unsigned placement) {
         return;
     }
     const uint32_t game = static_cast<uint32_t>(MEM_W(0, gameplay_pointer_address));
-    if (!valid_rdram_address(game, 4)) {
+    const unsigned region = tribal_region(rdram);
+    if (!valid_rdram_address(game, 4) || region >= canonical_region_count) {
         return;
     }
     std::lock_guard lock(metadata_mutex);
@@ -861,10 +920,10 @@ void record_rescue(uint8_t* rdram, uint8_t level_id, unsigned placement) {
         return;
     }
     const uint16_t mask = static_cast<uint16_t>(1U << placement);
-    if ((binding->metadata.rescued_tribals[level_id] & mask) != 0) {
+    if ((binding->metadata.regional_rescues[region][level_id] & mask) != 0) {
         return;
     }
-    binding->metadata.rescued_tribals[level_id] |= mask;
+    binding->metadata.regional_rescues[region][level_id] |= mask;
     if (binding->slot >= 0) {
         slots[static_cast<size_t>(binding->slot)] = binding->metadata;
         persist_locked();
@@ -873,19 +932,23 @@ void record_rescue(uint8_t* rdram, uint8_t level_id, unsigned placement) {
 
 int rescued_count(uint8_t* rdram, const GameBinding* binding) {
     const uint32_t game = static_cast<uint32_t>(MEM_W(0, gameplay_pointer_address));
-    if (!valid_rdram_address(game, 0x5C + tribal_level_count * 2)) {
+    if (!valid_rdram_address(game, 0x334 + canonical_region_count * 8)) {
         return 0;
     }
     int count = 0;
     const bool include_persistent =
         persistent_tribal_rescues.load(std::memory_order_relaxed) &&
         binding != nullptr;
-    for (size_t level = 0; level < tribal_level_count; ++level) {
-        uint16_t rescued = MEM_HU(0, game + 0x5C + static_cast<uint32_t>(level * 2));
-        if (include_persistent) {
-            rescued |= binding->metadata.rescued_tribals[level];
+    const unsigned current_region = tribal_region(rdram);
+    for (unsigned region = 0; region < canonical_region_count; ++region) {
+        int individual_count = 0;
+        for (unsigned room = 0; room < tribal_level_count; ++room) {
+            uint16_t rescued = region == current_region ? MEM_HU(0x5C + room * 2, game) : 0;
+            if (include_persistent) rescued |= binding->metadata.regional_rescues[region][room];
+            individual_count += std::popcount(rescued);
         }
-        count += std::popcount(rescued);
+        count += std::min(tribal_region_total(rdram, region),
+            std::max(individual_count, int(MEM_BU(0x334 + region * 8, game))));
     }
     return count;
 }
@@ -905,6 +968,12 @@ int canonical_tribal_total(uint8_t* rdram) {
         total += count;
     }
     return total;
+}
+
+int reduced_tribal_threshold(uint8_t* rdram) {
+    const auto requirement = final_requirement.load(std::memory_order_relaxed);
+    if (requirement == jfc::modernization::FinalTribalRequirement::Original) return 0;
+    return jfc::modernization::required_tribal_count(canonical_tribal_total(rdram), requirement);
 }
 
 bool game_flag(uint8_t* rdram, uint32_t game, unsigned flag) {
@@ -1269,15 +1338,45 @@ bool sprint_compatible(uint8_t* rdram, uint32_t player) {
 }
 
 namespace jfc::modernization {
+ultramodern::AudioActivity audio_activity(uint8_t* rdram) {
+    using Activity = ultramodern::AudioActivity;
+    constexpr uint32_t transition_countdown = 0x800A3294U;
+    constexpr uint32_t pause_mode = 0x800FD7BDU;
+    constexpr uint32_t game_mode = 0x800FD7C4U;
+
+    if (MEM_B(0, transition_countdown) != 0) return Activity::Loading;
+    if (MEM_B(0, pause_mode) != 0) return Activity::Paused;
+    if (MEM_W(0, game_mode) != 0 || MEM_BU(0, frontend_mode_address) != 16)
+        return Activity::Menu;
+    return cinematic_active(rdram) ? Activity::Cutscene : Activity::Gameplay;
+}
 
 void set_settings_open_request(SettingsOpenRequest request) {
     settings_open_request.store(request, std::memory_order_release);
 }
 
+void set_save_metadata_error_reporter(void (*report)(const char*)) {
+    metadata_error_reporter.store(report, std::memory_order_release);
+}
+
+void flush_save_metadata() {
+    metadata_writer().flush();
+}
+
 bool initialize_save_metadata(const std::filesystem::path& directory) {
+
+    try { flush_save_metadata(); }
+    catch (const std::exception& error) {
+        std::fprintf(stderr, "Cannot reload QoL metadata: %s\n", error.what());
+        return false;
+    }
     std::lock_guard lock(metadata_mutex);
     slots = {};
     bindings = {};
+    tribal_reconciliation = {};
+    pending_save_slot = pending_clear_slot = -1;
+    pending_save_game = 0;
+    ++metadata_revision;
     active_sequence_key = 0;
     active_legacy_sequence_key = 0;
     active_sequence_route = {};
@@ -1315,7 +1414,8 @@ void set_invulnerable_tribals(bool enabled) {
 }
 
 void set_persistent_tribal_rescues(bool enabled) {
-    persistent_tribal_rescues.store(enabled, std::memory_order_relaxed);
+    if (persistent_tribal_rescues.exchange(enabled, std::memory_order_relaxed) != enabled)
+        tribal_option_revision.fetch_add(1, std::memory_order_relaxed);
 }
 
 void set_final_tribal_requirement(FinalTribalRequirement requirement) {
@@ -1360,6 +1460,14 @@ void set_double_enemy_drops(bool enabled) {
     double_enemy_drops.store(enabled, std::memory_order_relaxed);
 }
 
+void set_double_robot_mission_time(bool enabled) {
+    double_robot_mission_time.store(enabled, std::memory_order_relaxed);
+}
+
+void set_hide_companion(bool enabled) {
+    hide_companion.store(enabled, std::memory_order_relaxed);
+}
+
 void set_fast_throws(bool enabled) {
     fast_throws.store(enabled, std::memory_order_relaxed);
 }
@@ -1371,6 +1479,10 @@ void set_halo_health(bool enabled) {
 
 void set_persistent_dropped_pickups(bool enabled) {
     persistent_dropped_pickups.store(enabled, std::memory_order_relaxed);
+}
+
+void set_persistent_corpses(bool enabled) {
+    persistent_corpses.store(enabled, std::memory_order_relaxed);
 }
 
 void set_sprint_mode(SprintMode mode) {
@@ -1413,13 +1525,6 @@ WeaponShortcuts weapon_shortcuts(uint8_t* rdram, unsigned character) {
     const auto* binding = active_binding(rdram);
     if (!binding) return {};
     return {binding->metadata.weapon_slots[character], binding->metadata.throwables[character]};
-}
-
-bool is_tribal_actor_type(unsigned int actor_type) {
-    return (actor_type >= 0x11CU && actor_type <= 0x120U) ||
-        actor_type == 0x66U || actor_type == 0x70U ||
-        actor_type == 0x90U || actor_type == 0x97U ||
-        actor_type == 0x157U || actor_type == 0xA5U;
 }
 
 int required_tribal_count(int canonical_total,
@@ -1474,6 +1579,27 @@ extern "C" void jfc_scale_enemy_drop_roll(recomp_context* ctx) {
         ctx->r2 = 1;
 }
 
+extern "C" int32_t jfc_robot_mission_allowance(int32_t tenths) {
+    const int multiplier = double_robot_mission_time.load(std::memory_order_relaxed) ? 2 : 1;
+    if (tenths <= 0 || tenths > INT16_MAX / multiplier)
+        throw std::runtime_error("Robot mission time allowance exceeds its signed 16-bit counter");
+    return tenths * multiplier;
+}
+
+extern "C" int jfc_hide_companion(uint8_t* rdram, uint32_t object) {
+    if (!hide_companion.load(std::memory_order_relaxed) ||
+        !valid_rdram_address(object, 0x6CU) || MEM_H(0x48, object) != 2) return 0;
+    const uint32_t companion = uint32_t(MEM_W(0x68, object));
+    if (!valid_rdram_address(companion, 0x28U)) return 0;
+    const uint32_t owner = uint32_t(MEM_W(0x24, companion));
+    if (!valid_rdram_address(owner, 0x6CU) || MEM_H(0x48, owner) != 1) return 0;
+    const uint32_t player = uint32_t(MEM_W(0x68, owner));
+    if (!valid_rdram_address(player, 0x5C4U)) return 0;
+
+    return uint32_t(MEM_W(0x50C, player)) == object && MEM_BU(0x10D, player) == 0 &&
+        MEM_W(0, 0x801045B8U) == 0 && MEM_W(0x5C0, player) == 0;
+}
+
 extern "C" void jfc_refill_after_mission(uint8_t* rdram) {
 
     if (!mission_complete_refill.load(std::memory_order_relaxed) ||
@@ -1503,8 +1629,27 @@ extern "C" void jfc_refill_after_mission(uint8_t* rdram) {
 
     for (unsigned weapon = 0; weapon < 16; ++weapon)
         if (weapons & (1U << weapon))
-            MEM_H(0x14 + weapon * 2, record) = MEM_HU(0x34 + weapon * 2, record);
+            MEM_H(0x14 + weapon * 2, record) = jfc_weapon_pickup_capacity(
+                MEM_HU(0x34 + weapon * 2, record), weapon, MEM_HU(0x14 + weapon * 2, record));
     MEM_B(0x542, player) = 0;
+}
+
+extern "C" void jfc_refill_boss_phase_ammo(uint8_t* rdram) {
+    if (MEM_BU(0, 0x800A4FC4U) != 0) return;
+    const auto game = uint32_t(MEM_W(0, gameplay_pointer_address));
+    const unsigned character = MEM_HU(0, current_character_address) & 3U;
+    if (character >= 3 || (game & 1U) ||
+        !valid_rdram_address(game, 0x15CU + 3U * 0x76U)) return;
+    const uint32_t record = game + 0x15CU + character * 0x76U;
+    const unsigned weapons = MEM_HU(0xA, record);
+
+    for (unsigned weapon = 0; weapon < 16; ++weapon) {
+        if (!(weapons & (1U << weapon))) continue;
+        const unsigned capacity = jfc_weapon_capacity(MEM_HU(0x34 + weapon * 2, record), weapon);
+        const unsigned held = MEM_HU(0x14 + weapon * 2, record);
+        if (held < capacity)
+            MEM_H(0x14 + weapon * 2, record) = std::min(capacity, held + (capacity + 3U) / 4U);
+    }
 }
 
 extern "C" void jfc_reset_health_recharge(void) {
@@ -1588,7 +1733,10 @@ extern "C" void jfc_scale_duplicate_weapon_ammo(uint8_t* rdram, recomp_context* 
     if (!double_ammo_pickups.load(std::memory_order_relaxed)) return;
     const auto record = static_cast<uint32_t>(ctx->r5);
     if (!valid_rdram_address(record, 0x36U) || (record & 1U)) return;
-    ctx->r25 = doubled_ammo_award(ctx->r25, ctx->r24, MEM_HU(0x34, record));
+    const auto pickup = uint32_t(ctx->r6);
+    if (!valid_rdram_address(pickup, 2) || (pickup & 1U)) return;
+    ctx->r25 = doubled_ammo_award(ctx->r25, ctx->r24,
+        jfc_weapon_capacity(MEM_HU(0x34, record), MEM_HU(0, pickup)));
 }
 
 extern "C" void jfc_preserve_dropped_collectible(uint8_t* rdram, recomp_context* ctx) {
@@ -1615,6 +1763,147 @@ extern "C" void jfc_preserve_dropped_health(recomp_context* ctx) {
     ctx->r14 = 0;
 }
 
+namespace {
+bool corpse_completed(uint32_t object) {
+    const uint32_t index = (object & 0x1FFFFFFFU) / 4;
+    return (completed_corpses[index / 32] & (1U << (index % 32))) != 0;
+}
+
+bool is_fading_corpse(uint8_t* rdram, uint32_t object, uint32_t state, bool removing = false) {
+    if (!rdram || (object & 3U) || (state & 3U) ||
+        !valid_rdram_address(object, 0xA4U) ||
+        !valid_rdram_address(state, 0xC8U) ||
+        MEM_H(0x48, object) != 24 ||
+        uint32_t(MEM_W(0x68, object)) != state ||
+        (!removing && (MEM_BU(7, state) & 0x80U)) ||
+        MEM_H(0xA6, state) > 0 || MEM_BU(0x55, state) == 0) return false;
+    const uint32_t health = uint32_t(MEM_W(0x4C, object));
+    return !(health & 3U) && valid_rdram_address(health, 8U) &&
+        MEM_H(6, health) <= 0;
+}
+
+void finish_corpse_membership(uint8_t* rdram, recomp_context* ctx,
+                              uint32_t object, uint32_t state,
+                              recomp_func_t* tidy_squad) {
+
+    constexpr uint32_t detached = 0x4000U;
+    if (uint32_t(MEM_W(0, state)) & detached) return;
+    if (!tidy_squad) throw std::runtime_error("Missing native squad retirement");
+    auto retirement = *ctx;
+    retirement.r4 = int32_t(object);
+    tidy_squad(rdram, &retirement);
+    MEM_W(0, state) = uint32_t(MEM_W(0, state)) | detached;
+}
+}
+
+extern "C" void jfc_preserve_corpse_fade(uint8_t* rdram, recomp_context* ctx,
+                                          recomp_func_t* remove_squaddie) {
+    if (!persistent_corpses.load(std::memory_order_relaxed)) return;
+    const uint32_t stack = uint32_t(ctx->r29);
+    if (!rdram || (stack & 3U) || !valid_rdram_address(stack, 0x16CU)) return;
+    const uint32_t object = uint32_t(MEM_W(0x168, stack));
+    const uint32_t state = uint32_t(ctx->r8);
+    if (!is_fading_corpse(rdram, object, state) || !corpse_completed(object)) return;
+    const uint32_t index = (object & 0x1FFFFFFFU) / 4;
+    if (!(retired_corpses[index / 32] & (1U << (index % 32)))) {
+        if (!remove_squaddie || corpse_retirement_object)
+            throw std::runtime_error("Invalid retained corpse cleanup scope");
+
+        auto retirement = *ctx;
+        retirement.r4 = int32_t(object);
+        corpse_retirement_object = object;
+        try { remove_squaddie(rdram, &retirement); }
+        catch (...) { corpse_retirement_object = 0; throw; }
+        corpse_retirement_object = 0;
+    }
+
+    MEM_B(0x55, state) = 1;
+    ctx->r2 = 1;
+    ctx->r4 = 0;
+}
+
+extern "C" void jfc_begin_corpse_retirement(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t object = uint32_t(ctx->r4);
+    if (corpse_retirement_object) throw std::runtime_error("Nested corpse retirement");
+    if (!rdram || (object & 3U) || !valid_rdram_address(object, 0x6CU)) return;
+    if (is_fading_corpse(rdram, object, uint32_t(MEM_W(0x68, object))))
+        corpse_retirement_object = object;
+}
+
+extern "C" void jfc_end_corpse_retirement() {
+    corpse_retirement_object = 0;
+}
+
+extern "C" int jfc_corpse_reward_completed(uint32_t object) {
+    return object != 0 && object == corpse_retirement_object && corpse_completed(object);
+}
+
+extern "C" int jfc_retain_completed_corpse(uint8_t* rdram, recomp_context* ctx,
+                                            recomp_func_t* tidy_squad,
+                                            recomp_func_t* clear_targets,
+                                            recomp_func_t* clear_events) {
+
+    const uint32_t object = uint32_t(ctx->r16);
+    if (!persistent_corpses.load(std::memory_order_relaxed) ||
+        !rdram || !object || object != corpse_retirement_object) return 0;
+    const uint32_t state = uint32_t(MEM_W(0x68, object));
+    if (!is_fading_corpse(rdram, object, state, true)) return 0;
+    if (!clear_targets || !clear_events)
+        throw std::runtime_error("Missing native corpse reference cleanup");
+
+    MEM_W(0xBC, state) = 0;
+    for (auto cleanup : {clear_targets, clear_events}) {
+        auto retirement = *ctx;
+        retirement.r4 = int32_t(object);
+        cleanup(rdram, &retirement);
+    }
+    finish_corpse_membership(rdram, ctx, object, state, tidy_squad);
+    const uint32_t index = (object & 0x1FFFFFFFU) / 4;
+    completed_corpses[index / 32] |= 1U << (index % 32);
+    retired_corpses[index / 32] |= 1U << (index % 32);
+    MEM_B(7, state) = MEM_BU(7, state) & ~0x80U;
+    MEM_B(0x55, state) = 1;
+    return 1;
+}
+
+extern "C" void jfc_preserve_detached_squad_resources(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t object = uint32_t(ctx->r16), state = uint32_t(ctx->r3);
+    if (rdram && !(object & 3U) && valid_rdram_address(object, 0x6CU) &&
+        !(state & 3U) && valid_rdram_address(state, 0xC0U) && corpse_completed(object) &&
+        uint32_t(MEM_W(0x68, object)) == state && (uint32_t(MEM_W(0, state)) & 0x4000U)) {
+
+        ctx->r4 = 0;
+
+        const uint32_t sound = uint32_t(MEM_W(0xBC, state));
+        if (sound && ((sound & 3U) || !valid_rdram_address(sound, 0x20U) ||
+                      uint32_t(MEM_W(0x1C, sound)) != state + 0xBCU))
+            MEM_W(0xBC, state) = 0;
+    }
+}
+
+extern "C" void jfc_forget_corpse(uint32_t object) {
+    if ((object & 3U) || !valid_rdram_address(object, 0x6CU)) return;
+    const uint32_t index = (object & 0x1FFFFFFFU) / 4;
+    completed_corpses[index / 32] &= ~(1U << (index % 32));
+    retired_corpses[index / 32] &= ~(1U << (index % 32));
+}
+
+extern "C" void jfc_corpse_opacity(uint8_t* rdram, recomp_context* ctx) {
+    if (!persistent_corpses.load(std::memory_order_relaxed)) return;
+    if (is_fading_corpse(rdram, uint32_t(ctx->r7), uint32_t(ctx->r12))) {
+
+        ctx->r13 = 0;
+    }
+}
+
+extern "C" void jfc_begin_default_game(uint8_t* rdram, recomp_context* ctx) {
+    const auto game = uint32_t(ctx->r4);
+    if (!valid_rdram_address(game, 0x538))
+        throw std::runtime_error("Invalid new-game metadata owner");
+    std::lock_guard lock(metadata_mutex);
+    bind_game(rdram, game, -1);
+}
+
 extern "C" void jfc_finish_game_load(uint8_t* rdram, recomp_context* ctx) {
     const int slot = static_cast<int>(MEM_W(0x30, ctx->r29));
     const uint32_t game = static_cast<uint32_t>(MEM_W(0x34, ctx->r29));
@@ -1623,15 +1912,38 @@ extern "C" void jfc_finish_game_load(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
     std::lock_guard lock(metadata_mutex);
-    bind_game(game, slot);
+    bind_game(rdram, game, slot);
 }
 
-extern "C" void jfc_begin_game_save(uint8_t*, recomp_context* ctx) {
+extern "C" void jfc_copy_game_binding(uint8_t* rdram, uint32_t source, uint32_t destination) {
+    if (!rdram || (source & 3U) || (destination & 3U) ||
+        !valid_rdram_address(source, 0x538U) || !valid_rdram_address(destination, 0x538U) ||
+        destination != uint32_t(MEM_W(0, gameplay_pointer_address)))
+        throw std::runtime_error("Invalid native save selection copy");
+    std::lock_guard lock(metadata_mutex);
+    const auto* from = find_binding(source);
+    const int destination_slot = game_slot(rdram, destination);
+    if (!from || from->slot < 0 || from->slot != game_slot(rdram, source) || destination_slot < 0) {
+
+        bind_game(rdram, destination, -1);
+        return;
+    }
+    const auto metadata = from->metadata;
+
+    bind_game(rdram, destination, destination_slot)->metadata = metadata;
+}
+
+extern "C" void jfc_begin_game_save(uint8_t* rdram, recomp_context* ctx) {
+    std::lock_guard lock(metadata_mutex);
     pending_save_slot = static_cast<int>(ctx->r4);
     pending_save_game = static_cast<uint32_t>(ctx->r5);
+    if (pending_save_slot >= 0 && pending_save_slot < int(save_slot_count) &&
+        valid_rdram_address(pending_save_game, 4) && !find_binding(pending_save_game))
+        bind_game(rdram, pending_save_game, game_slot(rdram, pending_save_game));
 }
 
 extern "C" void jfc_finish_game_save(uint8_t* rdram, recomp_context*) {
+    std::lock_guard lock(metadata_mutex);
     if (pending_save_slot < 0 ||
         pending_save_slot >= static_cast<int>(save_slot_count) ||
         !valid_rdram_address(pending_save_game, 4)) {
@@ -1639,14 +1951,17 @@ extern "C" void jfc_finish_game_save(uint8_t* rdram, recomp_context*) {
         pending_save_game = 0;
         return;
     }
-    std::lock_guard lock(metadata_mutex);
     GameBinding* binding = find_binding(pending_save_game);
     if (binding == nullptr) {
-        binding = bind_game(pending_save_game, pending_save_slot);
+        binding = bind_game(rdram, pending_save_game, pending_save_slot);
     }
     if (binding != nullptr) {
         slots[static_cast<size_t>(pending_save_slot)] = binding->metadata;
         binding->slot = pending_save_slot;
+
+        for (auto& alias : bindings)
+            if (&alias != binding && alias.game && alias.slot == pending_save_slot)
+                alias.metadata = binding->metadata;
         persist_locked();
     }
     pending_save_slot = -1;
@@ -1654,15 +1969,16 @@ extern "C" void jfc_finish_game_save(uint8_t* rdram, recomp_context*) {
 }
 
 extern "C" void jfc_begin_game_clear(uint8_t*, recomp_context* ctx) {
+    std::lock_guard lock(metadata_mutex);
     pending_clear_slot = static_cast<int>(ctx->r4);
 }
 
 extern "C" void jfc_finish_game_clear(uint8_t*, recomp_context* ctx) {
+    std::lock_guard lock(metadata_mutex);
     if (ctx->r16 != 0x7F || pending_clear_slot < 0 ||
         pending_clear_slot >= static_cast<int>(save_slot_count)) {
         return;
     }
-    std::lock_guard lock(metadata_mutex);
     slots[static_cast<size_t>(pending_clear_slot)] = {};
     for (GameBinding& binding : bindings) {
         if (binding.slot == pending_clear_slot) {
@@ -1689,8 +2005,13 @@ extern "C" void jfc_restore_persistent_tribals(
 ) {
     const uint32_t level = static_cast<uint32_t>(ctx->r2);
     if (valid_rdram_address(level, 0x104)) {
-        restore_persistent_level(rdram, MEM_BU(0x103, level));
+        restore_persistent_region(rdram, MEM_BU(0x102, level),
+            MEM_BU(0x103, level), unsigned(MEM_W(0x18, ctx->r29)) & 15U);
     }
+}
+
+extern "C" void jfc_restore_tribal_region(uint8_t* rdram) {
+    restore_persistent_region(rdram, tribal_region(rdram));
 }
 
 extern "C" void jfc_record_tribal_rescue(uint8_t* rdram, recomp_context* ctx) {
@@ -1715,7 +2036,7 @@ extern "C" int jfc_should_protect_tribal_object(
     uint32_t object
 ) {
     if (!invulnerable_tribals.load(std::memory_order_relaxed) ||
-        !valid_rdram_address(object, 0x6CU)) {
+        !valid_rdram_address(object, 0x6CU) || MEM_H(0x48, object) != 24) {
         return 0;
     }
 
@@ -1737,7 +2058,7 @@ extern "C" int jfc_should_protect_tribal_object(
         return 0;
     }
 
-    if (tribal_is_already_rescued(rdram, actor)) {
+    if (tribal_has_completed_outcome(rdram, actor)) {
         return 0;
     }
     if (MEM_H(6, health) <= 0) {
@@ -1777,7 +2098,8 @@ extern "C" void jfc_override_final_tribal_gate(
     }
     const auto requirement = final_requirement.load(std::memory_order_relaxed);
     const int total = canonical_tribal_total(rdram);
-    const int required = jfc::modernization::required_tribal_count(total, requirement);
+    const int required = requirement == jfc::modernization::FinalTribalRequirement::Original
+        ? total : reduced_tribal_threshold(rdram);
     if (total <= 0 || required <= 0) {
         return;
     }
@@ -1798,6 +2120,69 @@ extern "C" void jfc_override_final_tribal_gate(
             persist_locked();
         }
     }
+}
+
+extern "C" void jfc_adapt_tribal_dialogue(uint8_t* rdram, uint32_t block,
+                                        uint32_t size, uint32_t message, uint32_t asset) {
+    if (message != 57 || asset != 10) return;
+    const int required = reduced_tribal_threshold(rdram);
+    if (required <= 0) return;
+    if ((block & 3U) || size < 4 || size > 32768 || !valid_rdram_address(block, size))
+        throw std::runtime_error("Invalid King Jeff dialogue allocation");
+    const auto& original = jfc::native_data::get().tribal_requirement_clause;
+    char replacement[64];
+    const int length = std::snprintf(replacement, sizeof(replacement),
+        "when %d Tribals are free.", required);
+    if (length <= 0 || size_t(length) * 2 > original.size())
+        throw std::runtime_error("Tribal requirement exceeds native dialogue capacity");
+    const auto glyph = [rdram](char c) { return MEM_BU(unsigned(c) - 32, 0x800A6F04U); };
+    std::array<uint32_t, 64> paragraphs{};
+    size_t count = 0;
+    uint32_t command = 0;
+    while (command < size && MEM_BU(command, block) != 0) {
+        const unsigned op = MEM_BU(command, block);
+        const uint32_t bytes = op >= 1 && op <= 5 ? 4 : op <= 7 ? 8 : 0;
+        if (!bytes || bytes > size - command)
+            throw std::runtime_error("Invalid King Jeff dialogue command");
+        if (op >= 2 && op <= 5) {
+            const uint32_t offset = uint32_t(MEM_W(command, block)) & 0xFFFFFFU;
+            if (offset >= size || count == paragraphs.size())
+                throw std::runtime_error("Invalid King Jeff dialogue text offset");
+            paragraphs[count++] = offset;
+        }
+        command += bytes;
+    }
+    if (command == size) throw std::runtime_error("Unterminated King Jeff dialogue commands");
+    for (size_t paragraph = 0; paragraph < count; ++paragraph) {
+        const uint32_t start = paragraphs[paragraph];
+        if (start <= command) throw std::runtime_error("King Jeff text overlaps commands");
+        uint32_t end = start;
+        while (end < size && MEM_BU(end, block) != 0)
+            end += (MEM_BU(end, block) & 0x80U) ? 2 : 1;
+        if (end >= size) throw std::runtime_error("Unterminated King Jeff dialogue text");
+        for (uint32_t at = start; at < end;) {
+            bool match = original.size() <= end - at;
+            for (size_t i = 0; match && i < original.size(); ++i)
+                match = MEM_BU(at + unsigned(i), block) == original[i];
+            if (match) {
+                for (size_t other = 0; other < count; ++other)
+                    if (paragraphs[other] > at && paragraphs[other] <= end)
+                        throw std::runtime_error("King Jeff dialogue has overlapping text owners");
+                for (int i = 0; i < length; ++i) {
+                    MEM_B(at + i * 2, block) = 0x80;
+                    MEM_B(at + i * 2 + 1, block) = glyph(replacement[i]);
+                }
+                const unsigned removed = unsigned(original.size() - size_t(length) * 2);
+                for (uint32_t read = at + unsigned(original.size()); read <= end; ++read)
+                    MEM_B(read - removed, block) = MEM_BU(read, block);
+                for (uint32_t clear = end - removed + 1; clear <= end; ++clear)
+                    MEM_B(clear, block) = 0;
+                return;
+            }
+            at += (MEM_BU(at, block) & 0x80U) ? 2 : 1;
+        }
+    }
+    throw std::runtime_error("King Jeff dialogue requirement clause was not found");
 }
 
 extern "C" int jfc_prepare_quick_character_switch(
@@ -2197,12 +2582,28 @@ extern "C" void jfc_finish_animseq_update(
     animseq_previous_state = state;
 }
 
+extern "C" void jfc_log_level_request(uint8_t* rdram, recomp_context* ctx) {
+
+    const TransitionState source = current_transition_state(rdram);
+
+    std::fflush(stderr);
+}
+
+extern "C" void jfc_end_game_save(uint8_t*, recomp_context*) {
+
+    std::lock_guard lock(metadata_mutex);
+    pending_save_slot = -1;
+    pending_save_game = 0;
+}
+
 extern "C" void jfc_observe_completed_level_load(
     uint8_t* rdram,
     recomp_context*
 ) {
 
     const TransitionState loaded = current_transition_state(rdram);
+
+    std::fflush(stderr);
 
     if (!valid_transition_state(loaded) ||
         static_cast<int>(MEM_BU(0, frontend_mode_address)) != loaded.mode) {
@@ -2239,6 +2640,34 @@ extern "C" void jfc_observe_completed_level_load(
 
     committed_transition = loaded;
     committed_transition_valid = true;
+}
+
+extern "C" void jfc_autosave_completed_level_load(uint8_t* rdram, recomp_context* ctx,
+                                                 recomp_func_t* request_save) {
+    if (!rdram) return;
+    const auto loaded = current_transition_state(rdram);
+
+    if (!valid_transition_state(loaded) || (loaded.mode != 16 && loaded.mode != 5) ||
+        loaded.character > 2 || MEM_BU(0, frontend_mode_address) != loaded.mode ||
+        MEM_W(0, 0x800FD7C4U) != 0) return;
+    const uint32_t game = uint32_t(MEM_W(0, gameplay_pointer_address));
+    if ((game & 3U) || !valid_rdram_address(game, 0x580U)) return;
+    int slot = -1;
+    {
+        std::lock_guard lock(metadata_mutex);
+        const auto* binding = find_binding(game);
+
+        if (!binding || binding->slot < 0 || binding->slot != game_slot(rdram, game)) return;
+        slot = binding->slot;
+    }
+    const uint32_t pending = uint32_t(MEM_W(0, 0x800A32A8U));
+
+    if ((pending & 0xBD000000U) ||
+        ((pending & 0x40000000U) && ((pending >> 3) & 7U) != uint32_t(slot))) return;
+    if (!request_save) throw std::runtime_error("Missing native transition save request");
+    auto save = *ctx;
+    save.r4 = slot;
+    request_save(rdram, &save);
 }
 
 extern "C" void jfc_track_ship_part_collectable(
@@ -2426,12 +2855,14 @@ extern "C" int jfc_update_ship_part_scanner(
     X(pending_sequence_route) X(pending_sequence_kind) X(seen_sequence_skip_applied) \
     X(committed_transition) X(committed_transition_valid) X(tracked_ship_parts) \
     X(scanner_frame) X(scanner_level) X(scanner_audio_target) X(scanner_audio_countdown) \
-    X(health_recharge) X(quick_grenade) X(previous_weapon_actions) X(pressed_weapon_actions)
+    X(health_recharge) X(quick_grenade) X(previous_weapon_actions) X(pressed_weapon_actions) \
+    X(completed_corpses)
 
 struct jfc::state::PreparedModernization::Impl {
 #define DECLARE_FIELD(name) decltype(::name) name{};
     JFC_MODERNIZATION_STATE_FIELDS(DECLARE_FIELD)
 #undef DECLARE_FIELD
+    jfc::weapons::State weapons{};
     bool committed = false;
 };
 namespace {
@@ -2480,7 +2911,31 @@ template<class Archive, class State> void transfer_modernization_state(Archive& 
         for (auto& binding : s.bindings) for (auto& weapon : binding.metadata.throwables) a.fields(weapon);
         a.fields(s.quick_grenade.weapon);
     }
+    if (version >= 5) {
+        for (auto& slot : s.slots) for (auto& region : slot.regional_rescues)
+            for (auto& value : region) a.fields(value);
+        for (auto& binding : s.bindings) for (auto& region : binding.metadata.regional_rescues)
+            for (auto& value : region) a.fields(value);
+    }
+    if (version >= 6) for (auto& value : s.completed_corpses) a.fields(value);
+    if (version >= 7) {
+        for (auto& value : s.weapons.flame_burns) a.fields(value);
+        for (auto& value : s.weapons.flame_half_round) a.fields(value);
+        for (auto& chain : s.weapons.chains) {
+            a.fields(chain.root, chain.owner);
+            for (auto& byte : chain.spawn) a.fields(byte);
+            for (auto& arc : chain.arcs) a.fields(arc.beam, arc.source, arc.target);
+        }
+    }
 }
+constexpr size_t modernization_state_v5_size =
+    19500 + (save_slot_count + binding_count) * canonical_region_count * tribal_level_count * 4;
+
+constexpr size_t weapon_state_v7_size = 4 * (65536 + 16 + 4 * (2 + 44 + 3 * 3));
+constexpr std::array<size_t, 7> modernization_state_sizes{
+    18592, 18624, 19328, 19500,
+    modernization_state_v5_size, modernization_state_v5_size + sizeof(completed_corpses),
+    modernization_state_v5_size + sizeof(completed_corpses) + weapon_state_v7_size};
 void validate_slot_state(const SlotMetadata& slot) {
     for (auto weapon : slot.throwables)
         if (!jfc::modernization::is_quick_throwable(weapon)) throw std::runtime_error("Invalid saved quick throwable");
@@ -2494,6 +2949,7 @@ void validate_slot_state(const SlotMetadata& slot) {
     for (auto key : slot.seen_travel) if (!valid_key(key)) throw std::runtime_error("Invalid saved travel identity");
 }
 template<class State> void validate_modernization_state(const State& s) {
+    jfc::weapons::validate_state(s.weapons);
     const auto address = [](uint32_t value, uint32_t length) {
         if (value != 0 && (!valid_rdram_address(value, length) || (value & 3U) != 0))
             throw std::runtime_error("Invalid save-state modernization owner address");
@@ -2555,23 +3011,32 @@ template<class State> void validate_modernization_state(const State& s) {
 }
 }
 jfc::state::Bytes jfc::state::capture_modernization() {
-    PreparedModernization::Impl state;
+    jfc::modernization::flush_save_metadata();
+    auto storage = std::make_unique<PreparedModernization::Impl>();
+    auto& state = *storage;
     {
         std::lock_guard lock(metadata_mutex);
 #define CAPTURE_FIELD(name) state.name = ::name;
         JFC_MODERNIZATION_STATE_FIELDS(CAPTURE_FIELD)
 #undef CAPTURE_FIELD
+        state.weapons = jfc::weapons::state();
     }
     validate_modernization_state(state);
     if (grenade_input_scoped) throw std::runtime_error("Save requested inside native weapon input scope");
-    Writer out; out.u32(4); transfer_modernization_state(out, state, 4);
+    if (corpse_retirement_object) throw std::runtime_error("Save requested inside native corpse retirement");
+    Writer out; out.u32(7); transfer_modernization_state(out, state, 7);
+    if (out.bytes.size() != modernization_state_sizes.back())
+        throw std::runtime_error("Modernization state layout does not match its schema");
     return std::move(out.bytes);
 }
 jfc::state::PreparedModernization::PreparedModernization(std::span<const uint8_t> saved)
-    : impl(std::make_unique<Impl>()) {
+{
     Reader in(saved);
     const auto version = in.u32();
-    if (version < 1 || version > 4) throw std::runtime_error("Unsupported modernization state schema");
+    if (version < 1 || version > 7) throw std::runtime_error("Unsupported modernization state schema");
+    if (saved.size() != modernization_state_sizes[version - 1])
+        throw std::runtime_error("Invalid modernization state section length");
+    impl = std::make_unique<Impl>();
     transfer_modernization_state(in, *impl, version); in.end(); validate_modernization_state(*impl);
 }
 jfc::state::PreparedModernization::~PreparedModernization() = default;
@@ -2581,6 +3046,10 @@ void jfc::state::PreparedModernization::commit() noexcept {
 #define RESTORE_FIELD(name) ::name = impl->name;
     JFC_MODERNIZATION_STATE_FIELDS(RESTORE_FIELD)
 #undef RESTORE_FIELD
+    jfc::weapons::restore_state(impl->weapons);
+    tribal_reconciliation = {};
+    retired_corpses.fill(0);
+    ++metadata_revision;
 
     health_reset_requested.store(false, std::memory_order_relaxed);
 

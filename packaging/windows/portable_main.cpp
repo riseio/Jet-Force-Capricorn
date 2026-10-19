@@ -3,6 +3,8 @@
 #include <shellapi.h>
 #include <compressapi.h>
 #include <bcrypt.h>
+#include <dbghelp.h>
+#include <psapi.h>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -218,8 +220,205 @@ std::wstring quote(const std::wstring& argument) {
     }
     result.append(slashes * 2, L'\\'); result += L'"'; return result;
 }
+
+void append_crash_log(HANDLE log, const char* text, size_t length) noexcept {
+    LARGE_INTEGER end{};
+    DWORD written = 0;
+    if (!SetFilePointerEx(log, end, nullptr, FILE_END) ||
+        !WriteFile(log, text, static_cast<DWORD>(length), &written, nullptr) || written != length ||
+        !FlushFileBuffers(log)) {
+        std::fprintf(stderr, "Portable crash log write failed (Windows error %lu)\n", GetLastError());
+    }
+}
+Handle crash_output(const fs::path& path) {
+    Handle file(CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    if (file.get() == INVALID_HANDLE_VALUE) check(FALSE, "Cannot open crash output");
+    BY_HANDLE_FILE_INFORMATION info{};
+    check(GetFileInformationByHandle(file.get(), &info), "Cannot inspect crash output");
+    if ((info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) || info.nNumberOfLinks != 1)
+        fail("Crash output cannot be a link or directory");
+    check(SetEndOfFile(file.get()), "Cannot reset crash output");
+    return file;
+}
+void capture_crash(HANDLE process, HANDLE log, const fs::path& data, const DEBUG_EVENT& event) noexcept {
+    std::array<char, 4096> text{};
+    EXCEPTION_RECORD record = event.u.Exception.ExceptionRecord;
+
+    record.ExceptionRecord = nullptr;
+    CONTEXT context{};
+    context.ContextFlags = CONTEXT_ALL;
+    Handle thread(OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, event.dwThreadId));
+    const bool contextCaptured = thread.get() != nullptr && GetThreadContext(thread.get(), &context);
+    const DWORD contextError = contextCaptured ? 0 : GetLastError();
+    MEMORY_BASIC_INFORMATION memory{};
+    VirtualQueryEx(process, record.ExceptionAddress, &memory, sizeof(memory));
+    std::array<wchar_t, 32768> module{};
+    if (memory.AllocationBase)
+        K32GetModuleFileNameExW(process, static_cast<HMODULE>(memory.AllocationBase), module.data(), DWORD(module.size()));
+    std::array<char, 2048> moduleUtf8{};
+    if (!WideCharToMultiByte(CP_UTF8, 0, module.data(), -1, moduleUtf8.data(), int(moduleUtf8.size()), nullptr, nullptr))
+        std::strcpy(moduleUtf8.data(), "unavailable");
+    SYSTEMTIME now{};
+    GetSystemTime(&now);
+    const int count = std::snprintf(text.data(), text.size(),
+        "JFC_PORTABLE_CRASH version=%s main=%s source=%s\n"
+        "utc=%04u-%02u-%02uT%02u:%02u:%02u.%03uZ process_id=%lu thread_id=%lu first_chance=%lu\n"
+        "exception_code=0x%08lX exception_flags=0x%08lX exception_address=%p parameters=%lu parameter0=0x%llX parameter1=0x%llX\n"
+        "context_captured=%u context_error=%lu rip=0x%llX rsp=0x%llX\n"
+        "fault_module=%s module_base=%p module_offset=0x%llX\n",
+        JFC_VERSION, JFC_MAIN_COMMIT, JFC_SOURCE_FINGERPRINT,
+        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
+        event.dwProcessId, event.dwThreadId, event.u.Exception.dwFirstChance,
+        record.ExceptionCode, record.ExceptionFlags, record.ExceptionAddress, record.NumberParameters,
+        record.NumberParameters > 0 ? static_cast<unsigned long long>(record.ExceptionInformation[0]) : 0ULL,
+        record.NumberParameters > 1 ? static_cast<unsigned long long>(record.ExceptionInformation[1]) : 0ULL,
+        unsigned(contextCaptured), contextError, context.Rip, context.Rsp, moduleUtf8.data(), memory.AllocationBase,
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(record.ExceptionAddress) - reinterpret_cast<uintptr_t>(memory.AllocationBase)));
+    const size_t length = count > 0 ? std::min(size_t(count), text.size() - 1) : 0;
+    append_crash_log(log, text.data(), length);
+    bool dumpWritten = false, reportWritten = false;
+    DWORD dumpError = 0, reportError = 0;
+    try {
+        auto dump = crash_output(data / L"crash-last.dmp");
+        EXCEPTION_POINTERS pointers{&record, &context};
+        MINIDUMP_EXCEPTION_INFORMATION exception{event.dwThreadId, &pointers, FALSE};
+        dumpWritten = MiniDumpWriteDump(process, event.dwProcessId, dump.get(),
+            static_cast<MINIDUMP_TYPE>(MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules),
+            contextCaptured ? &exception : nullptr, nullptr, nullptr) != FALSE;
+        if (!dumpWritten) dumpError = GetLastError();
+        if (!FlushFileBuffers(dump.get())) { dumpWritten = false; dumpError = GetLastError(); }
+    } catch (const std::exception& error) {
+        dumpError = GetLastError();
+        append_crash_log(log, error.what(), std::strlen(error.what()));
+    }
+    try {
+        auto report = crash_output(data / L"crash-last.txt");
+        DWORD written = 0;
+        reportWritten = WriteFile(report.get(), text.data(), DWORD(length), &written, nullptr) && written == length && FlushFileBuffers(report.get());
+        if (!reportWritten) reportError = GetLastError();
+    } catch (const std::exception& error) {
+        reportError = GetLastError();
+        append_crash_log(log, error.what(), std::strlen(error.what()));
+    }
+    const int resultLength = std::snprintf(text.data(), text.size(),
+        "\nJFC_PORTABLE_CRASH_CAPTURE dump_written=%u dump_error=%lu report_written=%u report_error=%lu\n",
+        unsigned(dumpWritten), dumpError, unsigned(reportWritten), reportError);
+    append_crash_log(log, text.data(), size_t(resultLength));
+}
+
+struct MonitorStatistics {
+    std::array<uint64_t, 10> counts{};
+    uint64_t handlingTicks = 0, firstChance = 0, secondChance = 0;
+    LARGE_INTEGER frequency{}, started{}, previous{};
+    uint64_t previousCpu = 0;
+    explicit MonitorStatistics() {
+        check(QueryPerformanceFrequency(&frequency), "Cannot read diagnostic clock frequency");
+        check(QueryPerformanceCounter(&started), "Cannot read diagnostic clock");
+        previous = started;
+    }
+    void report(HANDLE process, HANDLE log, bool final) noexcept {
+        LARGE_INTEGER now{};
+        if (!QueryPerformanceCounter(&now)) return;
+        const double interval = double(now.QuadPart - previous.QuadPart) / frequency.QuadPart;
+        if (!final && interval < 2.0) return;
+        FILETIME created{}, exited{}, kernel{}, user{};
+        const bool cpuValid = GetProcessTimes(process, &created, &exited, &kernel, &user) != FALSE;
+        const uint64_t cpu = ((uint64_t(kernel.dwHighDateTime) << 32) | kernel.dwLowDateTime) +
+            ((uint64_t(user.dwHighDateTime) << 32) | user.dwLowDateTime);
+        std::array<char, 768> line{};
+        const int length = std::snprintf(line.data(), line.size(),
+            "JFC_MONITOR elapsed_s=%.3f interval_s=%.3f final=%u child_cpu_valid=%u child_cpu_cores=%.3f event_counts=cumulative"
+            " exception_events=%llu first_chance=%llu second_chance=%llu thread_creates=%llu"
+            " dll_loads=%llu debug_strings=%llu handling_ms=%.3f\n",
+            double(now.QuadPart - started.QuadPart) / frequency.QuadPart, interval, unsigned(final), unsigned(cpuValid),
+            cpuValid && interval > 0 && cpu >= previousCpu ? double(cpu - previousCpu) / (10000000.0 * interval) : 0.0,
+            static_cast<unsigned long long>(counts[EXCEPTION_DEBUG_EVENT]),
+            static_cast<unsigned long long>(firstChance), static_cast<unsigned long long>(secondChance),
+            static_cast<unsigned long long>(counts[CREATE_THREAD_DEBUG_EVENT]),
+            static_cast<unsigned long long>(counts[LOAD_DLL_DEBUG_EVENT]),
+            static_cast<unsigned long long>(counts[OUTPUT_DEBUG_STRING_EVENT]),
+            1000.0 * double(handlingTicks) / frequency.QuadPart);
+        previous = now;
+        if (cpuValid) previousCpu = cpu;
+        if (length <= 0 || size_t(length) >= line.size()) return;
+        DWORD written = 0;
+        if (!WriteFile(log, line.data(), DWORD(length), &written, nullptr) || written != DWORD(length))
+            std::fprintf(stderr, "Portable monitor summary write failed (Windows error %lu)\n", GetLastError());
+    }
+};
+DWORD wait_for_game(HANDLE process, HANDLE log, const fs::path& data, bool capture) {
+    if (!capture) {
+        check(WaitForSingleObject(process, INFINITE) == WAIT_OBJECT_0, "Cannot wait for game exit");
+        DWORD status = 0;
+        check(GetExitCodeProcess(process, &status), "Cannot read game exit status");
+        return status;
+    }
+    constexpr char armed[] = "JFC_CRASH_MONITOR armed=1 owner=portable-parent mode=fatal-exception\n";
+    append_crash_log(log, armed, sizeof(armed) - 1);
+    bool initialBreakpoint = true, captured = false;
+    MonitorStatistics statistics;
+    for (;;) {
+        DEBUG_EVENT event{};
+        if (!WaitForDebugEventEx(&event, 2000)) {
+            check(GetLastError() == ERROR_SEM_TIMEOUT, "Cannot wait for game diagnostic event");
+            statistics.report(process, log, false);
+            continue;
+        }
+        LARGE_INTEGER handlingStart{}, handlingEnd{};
+        QueryPerformanceCounter(&handlingStart);
+        if (event.dwDebugEventCode < statistics.counts.size()) ++statistics.counts[event.dwDebugEventCode];
+        DWORD continuation = DBG_CONTINUE;
+        if (event.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT && event.u.CreateProcessInfo.hFile)
+            CloseHandle(event.u.CreateProcessInfo.hFile);
+        if (event.dwDebugEventCode == LOAD_DLL_DEBUG_EVENT && event.u.LoadDll.hFile)
+            CloseHandle(event.u.LoadDll.hFile);
+
+        if (event.dwDebugEventCode == EXCEPTION_DEBUG_EVENT) {
+            const auto& exception = event.u.Exception;
+            if (exception.dwFirstChance) ++statistics.firstChance;
+            else ++statistics.secondChance;
+            if (initialBreakpoint && exception.dwFirstChance && exception.ExceptionRecord.ExceptionCode == EXCEPTION_BREAKPOINT) {
+                initialBreakpoint = false;
+            }
+            else {
+                continuation = DBG_EXCEPTION_NOT_HANDLED;
+                if (!exception.dwFirstChance && !captured) {
+                    captured = true;
+                    capture_crash(process, log, data, event);
+                }
+            }
+        }
+        const bool exited = event.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT;
+        const DWORD status = exited ? event.u.ExitProcess.dwExitCode : 0;
+        check(ContinueDebugEvent(event.dwProcessId, event.dwThreadId, continuation), "Cannot continue game diagnostic event");
+        QueryPerformanceCounter(&handlingEnd);
+        if (handlingEnd.QuadPart >= handlingStart.QuadPart)
+            statistics.handlingTicks += uint64_t(handlingEnd.QuadPart - handlingStart.QuadPart);
+        statistics.report(process, log, exited);
+        if (exited) {
+            check(WaitForSingleObject(process, INFINITE) == WAIT_OBJECT_0, "Cannot finalize game exit");
+            return status;
+        }
+    }
+}
 DWORD run_game(const fs::path& runtime, const fs::path& data) {
+    wchar_t capturePolicy[2]{};
+    const bool capture = GetEnvironmentVariableW(L"JFC_CRASH_CAPTURE", capturePolicy, 2) == 1 && capturePolicy[0] == L'1';
+
+    SetLastError(ERROR_SUCCESS);
+    const DWORD heapPolicyLength = GetEnvironmentVariableW(L"_NO_DEBUG_HEAP", nullptr, 0);
+    const DWORD heapPolicyError = GetLastError();
+    const bool defaultHeapPolicy = capture && heapPolicyLength == 0 && heapPolicyError == ERROR_ENVVAR_NOT_FOUND;
+    if (defaultHeapPolicy) {
+        check(SetEnvironmentVariableW(L"_NO_DEBUG_HEAP", L"1"), "Cannot preserve ordinary game heap policy");
+    }
+    else if (heapPolicyLength == 0 && heapPolicyError != ERROR_SUCCESS && heapPolicyError != ERROR_ENVVAR_NOT_FOUND) {
+        SetLastError(heapPolicyError);
+        check(FALSE, "Cannot inspect game heap policy");
+    }
     check(SetEnvironmentVariableW(L"APP_FOLDER_PATH", data.c_str()), "Cannot set portable data root");
+    check(SetEnvironmentVariableW(L"JFC_PORTABLE_ARTIFACT", executable_path().c_str()), "Cannot identify portable artifact");
     check(SetEnvironmentVariableW(L"TEMP", (runtime / L"temp").c_str()), "Cannot set portable temporary root");
     check(SetEnvironmentVariableW(L"TMP", (runtime / L"temp").c_str()), "Cannot set portable temporary root");
     int argc = 0;
@@ -238,6 +437,12 @@ DWORD run_game(const fs::path& runtime, const fs::path& data) {
     if ((log_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) || log_info.nNumberOfLinks != 1)
         fail("Portable game log cannot be a link");
     check(SetEndOfFile(log.get()), "Cannot reset portable game log");
+    if (capture) {
+        const char* heapPolicyLog = defaultHeapPolicy ?
+            "JFC_LAUNCH_HEAP policy=release_default fatal_capture=enabled\n" :
+            "JFC_LAUNCH_HEAP policy=inherited fatal_capture=enabled\n";
+        append_crash_log(log.get(), heapPolicyLog, std::strlen(heapPolicyLog));
+    }
     Handle input(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
         &inherit, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
     if (input.get() == INVALID_HANDLE_VALUE) check(FALSE, "Cannot open game input");
@@ -260,19 +465,28 @@ DWORD run_game(const fs::path& runtime, const fs::path& data) {
     startup.StartupInfo.hStdOutput = log.get(); startup.StartupInfo.hStdError = log.get(); startup.StartupInfo.hStdInput = input.get();
     PROCESS_INFORMATION process{};
     BOOL created = CreateProcessW(game.c_str(), command.data(), nullptr, nullptr, TRUE,
-        CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+        CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT | (capture ? DEBUG_ONLY_THIS_PROCESS : 0),
         nullptr, nullptr, &startup.StartupInfo, &process);
     DWORD error = GetLastError();
     DeleteProcThreadAttributeList(startup.lpAttributeList);
     if (!created) { SetLastError(error); check(FALSE, "Cannot launch embedded game"); }
     Handle child(process.hProcess), thread(process.hThread);
     if (!AssignProcessToJobObject(job.get(), child.get()) || ResumeThread(thread.get()) == DWORD(-1)) {
-        DWORD original = GetLastError(); TerminateProcess(child.get(), 1); WaitForSingleObject(child.get(), INFINITE);
+        DWORD original = GetLastError();
+        check(TerminateProcess(child.get(), 1), "Cannot stop game after failed start");
+
+        wait_for_game(child.get(), log.get(), data, capture);
         SetLastError(original); check(FALSE, "Cannot start owned game process");
     }
-    if (WaitForSingleObject(child.get(), INFINITE) != WAIT_OBJECT_0) check(FALSE, "Cannot wait for game exit");
-    DWORD status = 1;
-    check(GetExitCodeProcess(child.get(), &status), "Cannot read game exit status");
+    const DWORD status = wait_for_game(child.get(), log.get(), data, capture);
+    char terminal[80];
+    const int length = std::snprintf(terminal, sizeof(terminal), "\nJFC_PORTABLE_EXIT status=0x%08lX\n", status);
+    LARGE_INTEGER end{};
+    check(SetFilePointerEx(log.get(), end, nullptr, FILE_END), "Cannot seek game exit log");
+    DWORD written = 0;
+    check(WriteFile(log.get(), terminal, DWORD(length), &written, nullptr) && written == DWORD(length),
+        "Cannot write game exit status");
+    check(FlushFileBuffers(log.get()), "Cannot flush game exit status");
     return status;
 }
 void report(const char* error) {

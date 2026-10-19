@@ -1,5 +1,8 @@
 #include "game_hud.hpp"
+#include "boss_health.hpp"
+#include "input_prompts.hpp"
 #include "native_context.hpp"
+#include "native_rom_data.hpp"
 #include "jfc_modernization.hpp"
 #include "jfc_recomp.h"
 #include "../include/rt64_extended_gbi.h"
@@ -41,10 +44,6 @@ constexpr int token_variant = 0;
 constexpr int tribal_item = 46;
 constexpr int key_item = 145;
 
-struct KeyIcon { unsigned flag; int variant; };
-constexpr std::array<KeyIcon, 6> key_icons{{
-    {0,0}, {9,1}, {1,2}, {3,3}, {2,4}, {17,8}}};
-
 struct AreaMetadata {
     uint8_t* memory = nullptr;
     std::array<uint32_t, 5> identity{};
@@ -62,12 +61,8 @@ int counter_column_width = 0;
 std::array<char, 6> measured_count{};
 int measured_count_width = 0;
 
-struct IconBounds { int left, right, bottom, top; };
-
-constexpr std::array<IconBounds, 12> part_bounds{{
-    {-63,63,-36,61}, {-45,45,0,123}, {-60,60,-59,59}, {-37,37,-63,63},
-    {-86,86,-66,66}, {-53,53,-40,40}, {-53,53,-53,53}, {-53,53,-53,53},
-    {-53,53,-53,53}, {-43,43,0,121}, {-63,66,-45,45}, {-34,21,-53,53}}};
+using jfc::native_data::IconBounds;
+enum class TextAlign : uint32_t { Left = 0, Right = 1, Center = 4 };
 
 bool readable(uint32_t address, uint32_t size, uint32_t alignment = 1) {
     constexpr uint32_t rdram_size = 8U * 1024U * 1024U;
@@ -107,7 +102,7 @@ class NativeHudDraw {
     uint8_t previous_font;
     uint32_t text_address;
 public:
-    NativeHudDraw(uint8_t* memory, const recomp_context& context, bool right, bool bottom = false, bool top = false)
+    NativeHudDraw(uint8_t* memory, const recomp_context& context, bool right, bool bottom = false, bool top = false, bool center = false)
         : rdram(memory), call{}, previous_font(MEM_BU(0, font_in_use)) {
         jfc::runtime::copy_context(call, context);
         const auto stack = static_cast<uint32_t>(context.r29);
@@ -122,15 +117,17 @@ public:
             previous_window[i] = MEM_BU(i, font_window);
         command(rdram, (RT64_HOOK_OPCODE << 24) | RT64_HOOK_MAGIC_NUMBER,
             (RT64_HOOK_OP_PUSH << 28) | RT64_EXTENDED_OPCODE);
+        command(rdram, 0x64000000U | G_EX_UIALPHASCOPE_V1, 1);
         for (auto op : state_pushes) command(rdram, 0x64000000U | op, 0);
-        const uint32_t origin = right ? G_EX_ORIGIN_RIGHT : G_EX_ORIGIN_LEFT;
+        const uint32_t origin = center ? G_EX_ORIGIN_CENTER : right ? G_EX_ORIGIN_RIGHT : G_EX_ORIGIN_LEFT;
         command(rdram, 0x64000000U | G_EX_SETRECTASPECT_V1, G_EX_ASPECT_ADJUST);
         command(rdram, 0x64000000U | G_EX_SETDRAWSCALE_V1,
             G_EX_SCALE_ONE | (origin << 9) |
             (((!top && (right || bottom)) ? G_EX_SCALE_ORIGIN_BOTTOM : G_EX_SCALE_ORIGIN_TOP) << 21));
         command(rdram, 0x64000000U | G_EX_SETRECTALIGN_V1, origin | (origin << 12));
 
-        const uint32_t x_offset = right ? (uint32_t(uint16_t(-320 * 4)) << 16) : 0;
+        const uint32_t x_offset = center ? (uint32_t(uint16_t(-160 * 4)) << 16) :
+            right ? (uint32_t(uint16_t(-320 * 4)) << 16) : 0;
         command(rdram, x_offset, x_offset);
         command(rdram, 0x64000000U | G_EX_SETVIEWPORTALIGN_V1, origin);
         command(rdram, 0, 0);
@@ -151,6 +148,7 @@ public:
         texDPInit(rdram, &call);
         command(rdram, 0xE7000000U, 0);
         for (auto op : state_pops) command(rdram, 0x64000000U | op, 0);
+        command(rdram, 0x64000000U | G_EX_UIALPHASCOPE_V1, 0);
         command(rdram, (RT64_HOOK_OPCODE << 24) | RT64_HOOK_MAGIC_NUMBER,
             RT64_HOOK_OP_POP << 28);
         for (size_t i = 0; i < previous_window.size(); ++i)
@@ -220,13 +218,13 @@ public:
         }
         return counter_column_width = width;
     }
-    void text(int x, int centre_y, const char* value, bool right = false) {
+    void text(int x, int centre_y, const char* value, TextAlign align = TextAlign::Left) {
         prepare_text(value);
         call.r4 = 128; call.r5 = 255; call.r6 = 192; call.r7 = 255;
         MEM_W(0x10, call.r29) = 255;
         fontColour(rdram, &call);
         call.r4 = display_list; call.r5 = x; call.r6 = centre_y; call.r7 = text_address;
-        MEM_W(0x10, call.r29) = 8 | (right ? 1 : 0);
+        MEM_W(0x10, call.r29) = 8 | uint32_t(align);
         fontPrintXY(rdram, &call);
     }
     void model_icon(int item, int variant, IconBounds bounds, int width, int height,
@@ -234,7 +232,15 @@ public:
 
         constexpr uint32_t record = 0x800FF780U + 50 * 32;
         const uint32_t object = MEM_W(item * 4, frontend_items);
-        if (!readable(object, 0x4C, 4)) throw std::runtime_error("Invalid native HUD model object");
+        if (!readable(object, 0x4C, 4)) {
+            char error[192];
+            std::snprintf(error, sizeof(error),
+                "Invalid native HUD model: item=%d variant=%d object=%08X loaded=%u level=%u heap_end=%08X",
+                item, variant, object, unsigned(MEM_BU(item, frontend_loaded)),
+                unsigned(MEM_HU(0, 0x800A323CU)), uint32_t(MEM_W(0, 0x800FDDA8U)));
+            std::fprintf(stderr, "JFC_HUD_RESOURCE_FAILURE %s\n", error);
+            throw std::runtime_error(error);
+        }
         std::array<uint8_t, 32> saved_record;
         std::array<uint8_t, 0x40> saved_object;
         for (size_t i = 0; i < saved_record.size(); ++i) saved_record[i] = MEM_BU(i, record);
@@ -272,34 +278,33 @@ public:
     }
     void coin(int right_x, int centre_y) {
 
-        model_icon(token_item, token_variant, {-74,74,-74,74}, 16,16,right_x,centre_y);
+        model_icon(token_item, token_variant, jfc::native_data::get().token_bounds, 16,16,right_x,centre_y);
     }
     void pickup_counter(uint32_t mask, bool ship, int centre_y, bool valid) {
         const int icon_right = 310-numeric_width()-4;
         if (ship) {
             const unsigned part = mask ? std::countr_zero(mask) : 0;
-            model_icon(111+part,0,part_bounds.at(part),24,16,icon_right,centre_y);
+            model_icon(111+part,0,jfc::native_data::get().part_bounds.at(part),24,16,icon_right,centre_y);
         }
-        else model_icon(key_item,8,{-296,296,-166,128},24,16,icon_right,centre_y);
+        else model_icon(key_item,8,jfc::native_data::get().key_bounds.at(8),24,16,icon_right,centre_y);
         char value[8];
         if (valid) std::snprintf(value,sizeof(value),"%d",std::popcount(mask));
         else std::snprintf(value,sizeof(value),"--");
-        text(309,centre_y,value,true);
+        text(309,centre_y,value,TextAlign::Right);
     }
     void key_counter(int variant, int centre_y) {
-        const IconBounds bounds = variant == 8 ? IconBounds{-296,296,-166,128}
-                                               : IconBounds{-38,38,15,112};
+        const IconBounds bounds = jfc::native_data::get().key_bounds.at(variant);
         model_icon(key_item,variant,bounds,24,16,310-numeric_width()-4,centre_y);
-        text(309,centre_y,"1",true);
+        text(309,centre_y,"1",TextAlign::Right);
     }
     void floyd_counter(uint8_t parts, int centre_y) {
 
         for (int variant = 1; variant <= 4; ++variant)
-            model_icon(token_item,variant,{-33,33,-14,41},24,16,
+            model_icon(token_item,variant,jfc::native_data::get().floyd_bounds,24,16,
                 310-numeric_width()-4,centre_y);
         char value[4];
         std::snprintf(value,sizeof(value),"%d",std::popcount(parts));
-        text(309,centre_y,value,true);
+        text(309,centre_y,value,TextAlign::Right);
     }
     void counter(const char* value, int centre_y, bool token, int frame = 0) {
         const int column_width = numeric_width();
@@ -327,17 +332,18 @@ public:
                 scale | (G_EX_ORIGIN_RIGHT << 9) | (G_EX_SCALE_ORIGIN_BOTTOM << 21));
             text(320 - (11 * G_EX_SCALE_ONE + scale / 2) / scale,
                 240 - ((240 - centre_y) * G_EX_SCALE_ONE + scale / 2) / scale,
-                value, true);
+                value, TextAlign::Right);
             command(rdram, 0x64000000U | G_EX_SETDRAWSCALE_V1,
                 G_EX_SCALE_ONE | (G_EX_ORIGIN_RIGHT << 9) | (G_EX_SCALE_ORIGIN_BOTTOM << 21));
         }
-        else text(309, centre_y, value, true);
+        else text(309, centre_y, value, TextAlign::Right);
     }
 };
 
 }
 
 void jfc::hud::invalidate_metadata() noexcept {
+    jfc::boss::invalidate_target();
     area_metadata.ready = false;
     tribal_metadata.ready = false;
     counter_column_width = 0;
@@ -418,17 +424,42 @@ extern "C" void jfc_draw_weapon_shortcuts(uint8_t* rdram, recomp_context* ctx) {
     for (auto encoded : shortcuts.slots)
         if (encoded && (mask & (1U << (encoded-1)))) acquire_weapon_icon(rdram,*ctx,encoded-1);
     NativeHudDraw draw(rdram,*ctx,true,false,true);
-
-    constexpr std::array<std::array<int,2>,4> positions{{{274,17},{298,40},{274,63},{250,40}}};
-    draw.box(272,32,4,17,0x709990); draw.box(265,38,18,4,0x709990);
+    const bool controller = jfc::input_prompts::current_device() ==
+        jfc::input_prompts::PromptProfileDevice::Controller;
+    constexpr std::array<std::array<int,2>,4> controller_positions{{
+        {274,17},{298,40},{274,63},{250,40}}};
+    if (controller) {
+        draw.box(272,32,4,17,0x709990);
+        draw.box(265,38,18,4,0x709990);
+    }
     for (unsigned slot=0;slot<4;++slot) {
-        const auto [x,y] = positions[slot];
+        const auto [x,y] = controller ? controller_positions[slot] :
+            std::array<int,2>{216 + int(slot)*27, 32};
+        if (!controller) {
+            draw.box(x-12,6,24,1,0x709990);
+            draw.box(x-12,44,24,1,0x709990);
+            draw.box(x-12,7,1,37,0x709990);
+            draw.box(x+11,7,1,37,0x709990);
+            const char label[]{char('1'+slot),0};
+            draw.text(x,15,label,TextAlign::Center);
+        }
         const auto encoded = shortcuts.slots[slot];
         if (encoded && (mask & (1U << (encoded-1)))) draw_weapon_icon(draw,rdram,encoded-1,x,y,18);
         else { draw.box(x-4,y,8,1,0x709990); }
-        const char label[]{char('1'+slot),0};
-        draw.text(x+9,y+7,label);
     }
+}
+
+extern "C" void jfc_draw_boss_health(uint8_t* rdram, recomp_context* ctx) {
+    const auto target = jfc::boss::current_target(rdram,uint32_t(ctx->r17));
+    if (!target.name) return;
+    NativeHudDraw draw(rdram,*ctx,false,false,true,true);
+    const auto color = target.destroyed ? 0x606870U : target.vulnerable ? 0x65ED96U : 0xD5A34AU;
+    if (target.maximum > 0) {
+        draw.box(110,27,100,5,0x343C44);
+        draw.box(110,27,(100*target.remaining+target.maximum-1)/target.maximum,5,color);
+    }
+    draw.text(160,17,target.name,TextAlign::Center);
+    draw.text(160,41,target.destroyed ? "DESTROYED" : target.vulnerable ? "VULNERABLE" : "PROTECTED",TextAlign::Center);
 }
 
 extern "C" int jfc_draw_modern_health(uint8_t* rdram, recomp_context* ctx) {
@@ -440,7 +471,7 @@ extern "C" int jfc_draw_modern_health(uint8_t* rdram, recomp_context* ctx) {
     NativeHudDraw draw(rdram, *ctx, false);
     char text[8];
     std::snprintf(text, sizeof(text), "%d%%", jfc::hud::active_health_percent(health));
-    draw.text(43, 8, text, true);
+    draw.text(43, 8, text, TextAlign::Right);
     for (int i = 0; i < health.reserve_containers; ++i) {
         draw.cell(48 + i * 8, 5, i < health.full_reserves ? 256 : 0, 0xFFD34E);
     }
@@ -469,6 +500,51 @@ extern "C" void jfc_free_counter_icons(uint8_t* rdram, recomp_context* ctx) {
         call.r29 -= 0x100;
         call.r4 = item;
         freeFrontEndItem(rdram, &call);
+    }
+}
+
+extern "C" void jfc_preserve_frontend_model_textures(uint8_t* rdram, recomp_context* ctx) {
+
+    if (ctx->r4 != 0) return;
+    const auto model = uint32_t(ctx->r18);
+    constexpr unsigned item_count = 180;
+    const auto table = uint32_t(MEM_W(0, 0x800A51D0U));
+    const auto checked = [](uint32_t pointer, uint32_t size) {
+        if (!readable(pointer, size, 4))
+            throw std::runtime_error("Invalid frontend model ownership during texture suspension");
+        return pointer;
+    };
+    checked(model, 0x50);
+    if (!readable(table, item_count * 2, 2))
+        throw std::runtime_error("Invalid frontend resource table during texture suspension");
+    const auto owns = [&](uint32_t instance) {
+        const auto definition = uint32_t(MEM_W(0, checked(instance, 4)));
+        checked(definition, 0x50);
+        return (definition & 0x1FFFFFFFU) == (model & 0x1FFFFFFFU);
+    };
+
+    for (unsigned item = 0; item < item_count; ++item) {
+        if (!MEM_BU(item, frontend_loaded)) continue;
+        const unsigned type = MEM_HU(item * 2, table) & 0xC000;
+        if (type & 0x8000) continue;
+        const auto resource = uint32_t(MEM_W(item * 4, frontend_items));
+        if (type == 0) {
+            if (owns(resource)) { ctx->r4 = 1; return; }
+            continue;
+        }
+        const auto object = checked(resource, 0x70);
+        const auto header = checked(uint32_t(MEM_W(0x40, object)), 0x20);
+        if (MEM_B(0x1E, header) != 0) continue;
+        const int count = MEM_B(0x1F, header);
+        if (count <= 0) continue;
+        const auto instances = checked(uint32_t(MEM_W(0x6C, object)), count * 4);
+
+        for (int variant = 0; variant < count; ++variant) {
+            if (owns(uint32_t(MEM_W(variant * 4, instances)))) {
+                ctx->r4 = 1;
+                return;
+            }
+        }
     }
 }
 
@@ -538,7 +614,7 @@ extern "C" void jfc_draw_room_counters(uint8_t* rdram, recomp_context* ctx) {
     }
     if (keys_visible) {
         uint32_t remaining = area.keys;
-        if (area.valid) for (const auto& icon : key_icons) {
+        if (area.valid) for (const auto& icon : jfc::native_data::get().key_icons) {
             const uint32_t bit = 1U << icon.flag;
             if ((remaining & bit) == 0) continue;
             draw.key_counter(icon.variant, next_row());
@@ -614,9 +690,10 @@ jfc::hud::Counters jfc::hud::read_counters(
 namespace {
 jfc::hud::AreaPickups scan_area_definitions(uint8_t* rdram) {
     jfc::hud::AreaPickups result;
-
-    constexpr std::array<uint16_t,12> actors{544,545,546,549,552,553,554,555,556,557,558,559};
-    constexpr std::array<uint16_t,11> npcs{350,476,486,487,488,489,490,550,551,612,772};
+    const auto& native=jfc::native_data::get();
+    const auto merge=[&](jfc::native_data::PickupMask mask) {
+        result.ship_parts |= mask.parts; result.keys |= mask.keys; result.floyd_parts |= mask.floyd;
+    };
     for (unsigned slot=0;slot<2;++slot) {
         const auto list = uint32_t(MEM_W(slot*4,0x800F2CD8U));
         const auto bytes = uint32_t(MEM_W(slot*4,0x800F2CE0U));
@@ -628,37 +705,20 @@ jfc::hud::AreaPickups scan_area_definitions(uint8_t* rdram) {
             const uint32_t record=list+offset;
             const unsigned size=MEM_BU(2,record), actor=MEM_HU(0,record);
             if (size<10 || (size&1) || size>bytes-offset) return {};
-            const auto part=std::find(actors.begin(),actors.end(),actor);
-            if (part!=actors.end()) result.ship_parts |= uint16_t(1U<<(part-actors.begin()));
-            if (actor>=613 && actor<=615) result.floyd_parts |= uint8_t(1U<<(actor-613));
-            if (actor>=600 && actor<=609) result.keys |= 1U<<(actor-600);
-            if (actor==426) {
-                if (size<20) return {};
-                switch (MEM_BU(0xA,record)) {
-                case 6: result.keys |= 1U<<3; break;
-                case 18: result.keys |= 1U<<9; break;
-                case 19: result.keys |= 1U<<1; break;
-                default: break;
-                }
-            }
-            if (std::find(npcs.begin(),npcs.end(),actor)!=npcs.end()) {
-                if (size<20) return {};
-
-                switch (MEM_BU(0xE,record)) {
-                case 4: case 10: result.keys |= 1U<<1; break;
-                case 9: result.keys |= 1U<<17; break;
-                case 14: case 15: case 16: case 17:
-                    result.ship_parts |= uint16_t(1U<<(MEM_BU(0xE,record)-14)); break;
-                case 20: result.ship_parts |= 1U<<4; break;
-                case 18: result.ship_parts |= 1U<<11; break;
-                default: break;
+            if (actor<native.actor_pickups.size()) {
+                const auto& pickup=native.actor_pickups[actor];
+                merge(pickup.direct);
+                if (pickup.selector!=jfc::native_data::RewardSelector::None) {
+                    if (size<20) return {};
+                    if (pickup.selector==jfc::native_data::RewardSelector::Chest)
+                        merge(native.chest_rewards[MEM_BU(0xA,record)]);
+                    else merge(native.dialogue_rewards[MEM_BU(0xE,record)]);
                 }
             }
             offset+=size;
         }
     }
-
-    if (MEM_H(0,0x800A323CU)==285) result.ship_parts |= 1U<<5;
+    if (MEM_HU(0,0x800A323CU)==native.event_level) merge(native.event_reward);
     result.valid = true;
     return result;
 }

@@ -24,6 +24,8 @@ constexpr uint16_t a = 0x8000;
 constexpr uint16_t b = 0x4000;
 
 constexpr uint16_t interact = 0x0040;
+
+constexpr uint16_t cutscene_skip = 0x0080;
 constexpr uint16_t c_right = 0x0001;
 constexpr uint16_t c_left = 0x0002;
 constexpr uint16_t c_down = 0x0004;

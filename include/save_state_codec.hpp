@@ -27,6 +27,7 @@ class Reader {
     std::span<const uint8_t> remaining;
 public:
     explicit Reader(std::span<const uint8_t> bytes) : remaining(bytes) {}
+    size_t remaining_bytes() const noexcept { return remaining.size(); }
     uint32_t u32() {
         if (remaining.size() < 4) throw std::runtime_error("Truncated save-state section");
         uint32_t value = 0;

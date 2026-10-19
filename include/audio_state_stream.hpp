@@ -77,6 +77,9 @@ public:
             throw std::runtime_error("SDL resampler state reconstruction mismatch");
     }
     const StreamState& captured() const { return state; }
+    size_t pending_input_frames() const noexcept {
+        return (state.staging.size() + (state.history.empty() ? 0 : padding_samples)) / 2;
+    }
     void put(std::span<const int16_t> samples) {
         if (samples.empty()) return;
         if ((samples.size() & 1) || samples.size() > size_t(INT_MAX) / sizeof(int16_t))
@@ -96,10 +99,9 @@ public:
 
     void finish(Samples& output) {
         take(output);
-        const size_t pending = state.staging.size() +
-            (state.history.empty() ? 0 : padding_samples);
+        const size_t pending = pending_input_frames();
         if (pending != 0) {
-            const size_t frames = (uint64_t(pending / 2) * state.output_rate +
+            const size_t frames = (uint64_t(pending) * state.output_rate +
                 state.input_rate - 1) / state.input_rate;
             Samples extension(padding_samples * 2, 0), tail;
             if (SDL_AudioStreamPut(stream.get(), extension.data(),
@@ -168,6 +170,12 @@ public:
         std::copy_n(ring.get() + first, part, saved.begin());
         std::copy_n(ring.get(), count - part, saved.begin() + part);
         return saved;
+    }
+
+    void discard(size_t samples) noexcept {
+        const auto read = readPosition.load(std::memory_order_relaxed);
+        const auto written = writePosition.load(std::memory_order_acquire);
+        readPosition.store(read + (std::min(samples, size_t(written - read)) & ~size_t(1)), std::memory_order_release);
     }
 
     void commit(Samples& prepared, size_t valid_samples) noexcept {

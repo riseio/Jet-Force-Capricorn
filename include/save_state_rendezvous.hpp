@@ -2,12 +2,13 @@
 
 #include <array>
 #include <cstdint>
+#include <future>
 #include "recomp.h"
 #include "save_state_game.hpp"
 
 namespace jfc::state {
 
-enum class Action : uint8_t { None, Save, Restore };
+enum class Action : uint8_t { None, Save, Restore, Pause };
 enum class Root : uint32_t { Game, Audio, Scheduler };
 
 struct RootState {
@@ -35,10 +36,13 @@ const GameState& captured_game_state();
 void stage_restore_game(const GameState& saved);
 void initialize_rendezvous(Transaction* transaction, Completion* completion);
 bool request(Action action);
+
+std::future<void> request_pause();
+void release_pause() noexcept;
 void idle_checkpoint(uint8_t* rdram);
 
 }
 
 extern "C" uint32_t jfc_state_requested();
 extern "C" void jfc_state_root(uint8_t* rdram, recomp_context* ctx,
-                                uint32_t root, uint64_t* locals);
+                                uint32_t root, uint64_t* locals) noexcept(false);

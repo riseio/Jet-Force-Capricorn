@@ -23,6 +23,7 @@ constexpr PromptProfileDevice select_profile_device(
 }
 
 void refresh_bindings(bool controller_connected);
+PromptProfileDevice current_device() noexcept;
 
 }
 

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -6,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <mutex>
@@ -30,7 +32,9 @@
 #include "jfc_enhancements.hpp"
 #include "crash_reporter.hpp"
 #include "input_prompts.hpp"
+#include "texture_launcher.hpp"
 #include "jfc_modernization.hpp"
+#include "weapon_qol.hpp"
 #include "jfc_recomp.h"
 #include "cpu_framebuffer_effects.hpp"
 #include "modern_input.hpp"
@@ -42,11 +46,14 @@
 #include "save_state_overlays.hpp"
 #include "save_state_service.hpp"
 #include "audio_output.hpp"
+#include "audio_settings.hpp"
+#include "camera_settings.hpp"
 #include "librecomp/state.hpp"
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
 #include "librecomp/rsp.hpp"
 #include "recompinput/input_events.h"
+#include "recompinput/input_binding.h"
 #include "recompinput/input_state.h"
 #include "recompinput/profiles.h"
 #include "recompinput/recompinput.h"
@@ -58,10 +65,11 @@
 #include "elements/ui_document.h"
 #include "elements/ui_label.h"
 #include "game_hud.hpp"
+#include "boss_health.hpp"
 #include "ultramodern/ultramodern.hpp"
-#include "../lib/rt64/src/common/rt64_performance_profiler.h"
-#include "ultramodern/rt64_guest_vi_bridge.hpp"
 #include "common/rt64_performance_profiler.h"
+#include "ultramodern/rt64_guest_vi_bridge.hpp"
+#include "common/rt64_profiler_sha256.h"
 #include "util/file.h"
 
 #ifndef JFC_VERSION
@@ -82,7 +90,7 @@
 
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* context);
 extern RspUcodeFunc jfg_audio;
-void jfc_register_overlays();
+#include "local_aot.hpp"
 void jfc_load_bootstrap_overlay_data(uint8_t* rdram, recomp_context* context);
 extern std::vector<recomp::GameEntry> supported_games;
 
@@ -163,8 +171,6 @@ extern "C" void jfc_profile_actor_end(jfc_actor_profile scope, const char* name)
 
 namespace {
 
-std::atomic<uint8_t> deck_l4_sample{0};
-
 void initialize_game_thread(uint8_t*, recomp_context* ctx) {
     constexpr gpr status_fr = 0x04000000;
     cop0_status_write(ctx, cop0_status_read(ctx) | status_fr);
@@ -178,6 +184,18 @@ constexpr char joystick_sensitivity_option[] = "joystick_sensitivity";
 constexpr char joystick_sensitivity_x_option[] = "joystick_sensitivity_x";
 constexpr char joystick_sensitivity_y_option[] = "joystick_sensitivity_y";
 constexpr char invert_right_stick_y_option[] = "invert_right_stick_y";
+constexpr char invert_left_stick_x_option[] = "invert_left_stick_x";
+constexpr char invert_left_stick_y_option[] = "invert_left_stick_y";
+constexpr char invert_right_stick_x_option[] = "invert_right_stick_x";
+constexpr std::array stick_inversion_options{invert_left_stick_x_option, invert_left_stick_y_option,
+    invert_right_stick_x_option, invert_right_stick_y_option};
+void load_stick_inversions(const recomp::config::Config& general) {
+    recompinput::set_stick_axis_inversions(
+        std::get<bool>(general.get_option_value(invert_left_stick_x_option)),
+        std::get<bool>(general.get_option_value(invert_left_stick_y_option)),
+        std::get<bool>(general.get_option_value(invert_right_stick_x_option)),
+        std::get<bool>(general.get_option_value(invert_right_stick_y_option)));
+}
 constexpr char qol_config_id[] = "qol";
 constexpr char cutscene_skipping_option[] = "cutscene_skipping";
 constexpr char invulnerable_tribals_option[] = "invulnerable_tribals";
@@ -192,9 +210,21 @@ constexpr char double_ammo_pickups_option[] = "double_ammo_pickups";
 constexpr char unlimited_lives_option[] = "unlimited_lives";
 constexpr char mission_complete_refill_option[] = "mission_complete_refill";
 constexpr char double_enemy_drops_option[] = "double_enemy_drops";
+constexpr char double_robot_mission_time_option[] = "double_robot_mission_time";
+constexpr char hide_companion_option[] = "hide_companion";
+constexpr char half_boss_health_option[] = "half_boss_health";
+constexpr char boss_health_hud_option[] = "boss_health_hud";
+constexpr char boss_weak_point_effect_option[] = "boss_weak_point_effect";
+constexpr char mantis_final_vulnerability_option[] = "mantis_final_vulnerability";
+constexpr char boss_pistol_damage_option[] = "boss_pistol_damage";
+constexpr char boss_phase_ammo_option[] = "boss_phase_ammo";
 constexpr char fast_throws_option[] = "fast_throws";
 constexpr char halo_health_option[] = "halo_health";
 constexpr char persistent_dropped_pickups_option[] = "persistent_dropped_pickups";
+constexpr char persistent_corpses_option[] = "persistent_corpses";
+constexpr char shotgun_upgrade_option[] = "shotgun_upgrade";
+constexpr char flamethrower_upgrade_option[] = "flamethrower_upgrade";
+constexpr char shocker_upgrade_option[] = "shocker_upgrade";
 constexpr char modern_health_option[] = "modern_health";
 constexpr char room_counters_option[] = "room_counters";
 constexpr char area_pickups_option[] = "area_pickups";
@@ -208,6 +238,64 @@ constexpr char modernization_schema_option[] = "modernization_schema";
 
 std::string make_settings_build_label() {
     return JFC_VERSION;
+}
+
+std::string settings_build_details() {
+    const auto wrap_hash = [](const std::string& value) {
+        return value.substr(0, 32) + "\n" + value.substr(32);
+    };
+    std::string details = "Version: " JFC_VERSION "\nMain commit:\n" JFC_MAIN_COMMIT
+        "\nSource fingerprint:\n" + wrap_hash(JFC_SOURCE_FINGERPRINT);
+    try {
+        std::filesystem::path artifact;
+        bool packaged = false;
+#ifdef _WIN32
+        std::array<wchar_t, 32768> path{};
+        const DWORD length = GetEnvironmentVariableW(L"JFC_PORTABLE_ARTIFACT", path.data(), DWORD(path.size()));
+        if (length >= path.size()) throw std::runtime_error("Artifact path is too long");
+        if (length != 0) {
+            artifact = path.data();
+            packaged = true;
+        } else {
+            const DWORD size = GetModuleFileNameW(nullptr, path.data(), DWORD(path.size()));
+            if (size == 0 || size >= path.size()) throw std::runtime_error("Cannot locate the running host");
+            artifact = path.data();
+        }
+#else
+        if (const char* image = std::getenv("APPIMAGE"); image && *image) {
+            artifact = image;
+            packaged = true;
+        } else {
+            artifact = std::filesystem::read_symlink("/proc/self/exe");
+        }
+#endif
+
+        if (!std::filesystem::is_regular_file(artifact)) throw std::runtime_error("Artifact is not a regular file");
+        const auto size = std::filesystem::file_size(artifact);
+        const auto modified = std::filesystem::last_write_time(artifact);
+        if (size == 0 || size > 2ULL * 1024 * 1024 * 1024) throw std::runtime_error("Artifact size is unsupported");
+        std::ifstream input(artifact, std::ios::binary);
+        if (!input) throw std::runtime_error("Cannot open artifact");
+        RT64::ProfilerDetail::Sha256 hash;
+        std::array<char, 65536> buffer;
+        for (uint64_t remaining = size; remaining != 0;) {
+            const auto count = std::min<uint64_t>(remaining, buffer.size());
+            input.read(buffer.data(), std::streamsize(count));
+            if (uint64_t(input.gcount()) != count) throw std::runtime_error("Cannot read complete artifact");
+            hash.update(buffer.data(), size_t(count));
+            remaining -= count;
+        }
+        if (input.peek() != std::char_traits<char>::eof() ||
+            std::filesystem::file_size(artifact) != size ||
+            std::filesystem::last_write_time(artifact) != modified)
+            throw std::runtime_error("Artifact changed while reading");
+        details += packaged ? "\nArtifact SHA256:\n" : "\nHost executable SHA256:\n";
+        details += wrap_hash(hash.hex());
+    } catch (const std::exception& error) {
+        details += "\nArtifact SHA256 unavailable: ";
+        details += error.what();
+    }
+    return details;
 }
 
 void queue_samples(int16_t* samples, size_t sample_count) {
@@ -264,50 +352,39 @@ ultramodern::renderer::WindowHandle create_window(
 #endif
 }
 
-void update_gfx(void*) {
-    const jfc::deck_grips::Edges deck_edges = jfc::deck_grips::poll();
-    deck_l4_sample.store(static_cast<uint8_t>(
-        (deck_edges.l4_held ? 1U : 0U) | (deck_edges.upper_available ? 2U : 0U)),
-        std::memory_order_relaxed);
-    if (deck_edges.r4) {
-        recompinput::request_r4_toggle("deck_hid");
+void apply_deck_snapshot(const jfc::deck_grips::Edges& deck_edges) {
+    const auto bit = [](SDL_GameControllerButton button) { return 1U << button; };
+    const uint32_t available = (deck_edges.upper_available ? bit(SDL_CONTROLLER_BUTTON_PADDLE1) |
+        bit(SDL_CONTROLLER_BUTTON_PADDLE2) | bit(SDL_CONTROLLER_BUTTON_BACK) : 0) |
+        (deck_edges.lower_available ? bit(SDL_CONTROLLER_BUTTON_PADDLE3) | bit(SDL_CONTROLLER_BUTTON_PADDLE4) : 0);
+    const uint32_t held = (deck_edges.r4_held ? bit(SDL_CONTROLLER_BUTTON_PADDLE1) : 0) |
+        (deck_edges.l4_held ? bit(SDL_CONTROLLER_BUTTON_PADDLE2) : 0) |
+        (deck_edges.r5_held ? bit(SDL_CONTROLLER_BUTTON_PADDLE3) : 0) |
+        (deck_edges.l5_held ? bit(SDL_CONTROLLER_BUTTON_PADDLE4) : 0) |
+        (deck_edges.select_held ? bit(SDL_CONTROLLER_BUTTON_BACK) : 0);
+    recompinput::set_controller_button_overlay(0x28DE, 0x1205, available, held);
+    static uint32_t previous_raw = 0;
+    for (unsigned button = 0; button < SDL_CONTROLLER_BUTTON_MAX; ++button) {
+        if (!((previous_raw ^ held) & (1U << button))) continue;
+        SDL_Event event{};
+        event.type = (held & (1U << button)) ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+        event.cbutton.which = recompinput::controller_overlay_source();
+        event.cbutton.button = uint8_t(button);
+        recompinput::sdl_event_filter(nullptr, &event, true);
     }
+    previous_raw = held;
+}
 
-    recompinput::set_visual_enhancement_toggle_pressed(
-        recompinput::VisualToggleSource::DeckHid,
-        deck_edges.select_held,
-        "deck_hid");
+void update_gfx(void*) {
+
     recompinput::handle_events();
-    struct StateInput { bool held = false, pressed = false; };
-    const auto state_binding = [&](recompinput::GameInput input) {
-        StateInput result;
-        for (auto device : {recompinput::InputDevice::Controller, recompinput::InputDevice::Keyboard}) {
-            const int profile = recompinput::profiles::get_input_profile_for_player(0, device);
-            if (profile < 0 || profile >= recompinput::profiles::get_input_profile_count()) continue;
-            for (size_t i = 0; i < recompinput::num_bindings_per_input; ++i) {
-                const auto binding = recompinput::profiles::get_input_binding(profile, input, i);
-
-                if (deck_edges.lower_available && binding.input_type == recompinput::InputType::ControllerDigital) {
-                    if (binding.input_id == SDL_CONTROLLER_BUTTON_PADDLE4) {
-                        result.held |= deck_edges.l5_held; result.pressed |= deck_edges.l5;
-                        continue;
-                    }
-                    if (binding.input_id == SDL_CONTROLLER_BUTTON_PADDLE3) {
-                        result.held |= deck_edges.r5_held; result.pressed |= deck_edges.r5;
-                        continue;
-                    }
-                }
-                result.held |= recompinput::get_input_digital(0, binding);
-            }
-        }
-        return result;
-    };
-    static bool save_held = false, restore_held = false;
-    const auto save_now = state_binding(recompinput::GameInput::SAVE_STATE);
-    const auto restore_now = state_binding(recompinput::GameInput::RESTORE_STATE);
-    const bool save_edge = save_now.pressed || (save_now.held && !save_held);
-    const bool restore_edge = restore_now.pressed || (restore_now.held && !restore_held);
-    save_held = save_now.held; restore_held = restore_now.held;
+    jfc::deck_grips::poll(apply_deck_snapshot);
+    const bool visuals_edge = recompinput::take_binding_press(recompinput::GameInput::TOGGLE_VISUALS);
+    if (visuals_edge && !recompinput::binding::is_binding() && !recompinput::game_input_disabled()) {
+        recompinput::pulse_visual_enhancement_toggle(recompinput::VisualToggleSource::SDL, "binding");
+    }
+    const bool save_edge = recompinput::take_binding_press(recompinput::GameInput::SAVE_STATE);
+    const bool restore_edge = recompinput::take_binding_press(recompinput::GameInput::RESTORE_STATE);
     if (!recompinput::game_input_disabled() && ultramodern::is_game_started()) {
 
         if (restore_edge) jfc::state::restore();
@@ -393,6 +470,7 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
                      recompinput::InputDevice::Controller,
                      recompinput::InputDevice::Keyboard}) {
                 if (source != recompinput::InputDevice::COUNT && device != source) continue;
+                if (recompinput::binding_frame_pressed(0, input, device)) return true;
                 const int profile = recompinput::profiles::get_input_profile_for_player(
                     0, device);
                 if (profile < 0 ||
@@ -402,11 +480,7 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
                 for (size_t binding = 0;
                      binding < recompinput::num_bindings_per_input; ++binding) {
                     const auto field = recompinput::profiles::get_input_binding(profile, input, binding);
-                    const uint8_t l4 = deck_l4_sample.load(std::memory_order_relaxed);
-                    const bool raw_l4 = input == recompinput::GameInput::QUICK_SWITCH_MODIFIER &&
-                        field.input_type == recompinput::InputType::ControllerDigital &&
-                        field.input_id == SDL_CONTROLLER_BUTTON_PADDLE2 && (l4 & 2U);
-                    if (raw_l4 ? (l4 & 1U) != 0 : recompinput::get_input_digital(0, field)) {
+                    if (field.input_type != recompinput::InputType::MouseWheel && recompinput::get_input_digital(0, field)) {
                         return true;
                     }
                 }
@@ -415,19 +489,17 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
         };
         const bool actions_enabled = result &&
             !recompinput::game_input_disabled();
-        const bool controller_modifier = action_active(
-            recompinput::GameInput::QUICK_SWITCH_MODIFIER, recompinput::InputDevice::Controller);
-        const bool keyboard_modifier = action_active(
-            recompinput::GameInput::QUICK_SWITCH_MODIFIER, recompinput::InputDevice::Keyboard);
+
+        if (actions_enabled &&
+            (recompinput::get_input_digital(0, recompinput::InputField::keyboard(SDL_SCANCODE_SPACE)) ||
+             recompinput::get_input_digital(0, recompinput::InputField::keyboard(SDL_SCANCODE_RETURN)) ||
+             recompinput::get_input_digital(0, recompinput::InputField::keyboard(SDL_SCANCODE_KP_ENTER)))) {
+            *buttons |= jfc::modern_input::cutscene_skip;
+        }
         const bool switch_pad = action_active(recompinput::GameInput::QUICK_SWITCH,
             recompinput::InputDevice::Controller);
-        static bool switch_pad_consumed = false;
-        if (!switch_pad) switch_pad_consumed = false;
-        else if (controller_modifier) switch_pad_consumed = true;
         const bool jump_active = actions_enabled && (action_active(recompinput::GameInput::JUMP));
-        const bool crouch_active = actions_enabled && ((action_active(recompinput::GameInput::CROUCH, recompinput::InputDevice::Controller) &&
-               !switch_pad_consumed) ||
-              action_active(recompinput::GameInput::CROUCH, recompinput::InputDevice::Keyboard));
+        const bool crouch_active = actions_enabled && (action_active(recompinput::GameInput::CROUCH));
         jfc::enhancements::sample_direct_actions(
             0, jump_active, crouch_active);
         if (actions_enabled && (action_active(recompinput::GameInput::INTERACT))) {
@@ -443,36 +515,40 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
         static jfc::QuickSwitchInput quick_switch;
         static jfc::QuickSwitchInput grenade;
         static jfc::QuickSwitchInput assign_throwable;
-        static jfc::StickSwitchInput stick_switch;
+        static jfc::QuickSwitchInput stick_switch;
         static std::array<jfc::QuickSwitchInput, 4> recall, assign;
         const bool stick_chord = stick_switch.sample(actions_enabled,
-            recompinput::get_input_digital(0, recompinput::InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSTICK)),
-            recompinput::get_input_digital(0, recompinput::InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSTICK)));
-        if (stick_switch.owns_clicks()) *buttons &= ~(0x0020U | 0x0400U);
+            action_active(recompinput::GameInput::QUICK_SWITCH_STICKS, recompinput::InputDevice::Controller), true,
+            action_active(recompinput::GameInput::QUICK_SWITCH_STICKS, recompinput::InputDevice::Keyboard), true);
         const bool qualified_switch = quick_switch.sample(actions_enabled,
             switch_pad,
-            controller_modifier,
+            true,
             action_active(recompinput::GameInput::QUICK_SWITCH, recompinput::InputDevice::Keyboard),
-            keyboard_modifier);
+            true);
         const bool quick_switch_active = qualified_switch || stick_chord;
         uint16_t weapon_actions = grenade.sample(actions_enabled,
             action_active(recompinput::GameInput::QUICK_GRENADE, recompinput::InputDevice::Controller),
-            !controller_modifier,
+            true,
             action_active(recompinput::GameInput::QUICK_GRENADE, recompinput::InputDevice::Keyboard),
-            !keyboard_modifier) ? 0x100U : 0U;
+            true) ? 0x100U : 0U;
         if (assign_throwable.sample(actions_enabled,
-            action_active(recompinput::GameInput::QUICK_GRENADE, recompinput::InputDevice::Controller), controller_modifier,
-            action_active(recompinput::GameInput::QUICK_GRENADE, recompinput::InputDevice::Keyboard), keyboard_modifier))
+            action_active(recompinput::GameInput::ASSIGN_THROWABLE, recompinput::InputDevice::Controller), true,
+            action_active(recompinput::GameInput::ASSIGN_THROWABLE, recompinput::InputDevice::Keyboard), true))
             weapon_actions |= 0x200U;
         constexpr std::array slot_inputs{recompinput::GameInput::WEAPON_SLOT_1,
             recompinput::GameInput::WEAPON_SLOT_2, recompinput::GameInput::WEAPON_SLOT_3,
             recompinput::GameInput::WEAPON_SLOT_4};
+        constexpr std::array assign_inputs{recompinput::GameInput::ASSIGN_WEAPON_SLOT_1,
+            recompinput::GameInput::ASSIGN_WEAPON_SLOT_2, recompinput::GameInput::ASSIGN_WEAPON_SLOT_3,
+            recompinput::GameInput::ASSIGN_WEAPON_SLOT_4};
         for (unsigned slot = 0; slot < slot_inputs.size(); ++slot) {
             const bool pad = action_active(slot_inputs[slot], recompinput::InputDevice::Controller);
             const bool key = action_active(slot_inputs[slot], recompinput::InputDevice::Keyboard);
-            if (recall[slot].sample(actions_enabled, pad, !controller_modifier, key, !keyboard_modifier))
+            if (recall[slot].sample(actions_enabled, pad, true, key, true))
                 weapon_actions |= 1U << slot;
-            if (assign[slot].sample(actions_enabled, pad, controller_modifier, key, keyboard_modifier))
+            if (assign[slot].sample(actions_enabled,
+                action_active(assign_inputs[slot], recompinput::InputDevice::Controller), true,
+                action_active(assign_inputs[slot], recompinput::InputDevice::Keyboard), true))
                 weapon_actions |= 0x10U << slot;
         }
 
@@ -490,8 +566,7 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
     float aim_x = 0.0f;
     float aim_y = 0.0f;
         recompinput::get_right_analog(controller, &aim_x, &aim_y);
-        aim_y = jfc::modern_input::from_sdl_vertical(
-            aim_y, jfc::enhancements::right_stick_y_inverted());
+        aim_y = jfc::modern_input::from_sdl_vertical(aim_y);
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
     if (controller == 0) {
@@ -525,7 +600,7 @@ void configure_controls() {
     recompinput::set_game_input_name(GameInput::SPRINT, "Sprint");
     recompinput::set_game_input_name(
         GameInput::QUICK_SWITCH, "Quick Character Switch");
-    recompinput::set_game_input_name(GameInput::QUICK_GRENADE, "Quick Throwable / Assign");
+    recompinput::set_game_input_name(GameInput::QUICK_GRENADE, "Quick Throwable");
     recompinput::set_game_input_description(
         GameInput::X_AXIS_NEG,
         "The left stick walks and strafes; the right stick turns and looks.");
@@ -552,6 +627,12 @@ void configure_controls() {
         "Crouch or crawl during gameplay. Default controller binding: B.");
     recompinput::set_game_input_description(GameInput::INTERACT,
         "Talk, open chests, activate devices and advance dialogue. Default: X / F. Does not cycle weapons; X can still be held to sprint.");
+    recompinput::set_default_mapping_for_controller(GameInput::TOGGLE_VISUALS,
+        {InputField::controller_digital(SDL_CONTROLLER_BUTTON_BACK)});
+    recompinput::set_default_mapping_for_keyboard(GameInput::TOGGLE_VISUALS,
+        {InputField::keyboard(SDL_SCANCODE_GRAVE)});
+    recompinput::set_game_input_description(GameInput::TOGGLE_VISUALS,
+        "Switch between original and enhanced textures. Default: View / Select or the grave key.");
     recompinput::set_default_mapping_for_controller(GameInput::INTERACT,
         {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_WEST)});
     recompinput::set_default_mapping_for_keyboard(GameInput::INTERACT,
@@ -565,7 +646,9 @@ void configure_controls() {
     recompinput::set_game_input_description(GameInput::QUICK_SWITCH_MODIFIER,
         "Hold L4 / Ctrl before a weapon slot to assign it, or Y / G to assign the equipped throwable. L4+B / Ctrl+T changes character.");
     recompinput::set_game_input_description(GameInput::QUICK_GRENADE,
-        "Press Y / G to use the assigned throwable and return to your weapon. Hold L4 / Ctrl and press Y / G to assign an equipped throwable; guns and flares cannot be assigned.");
+        "Use the assigned throwable and return to your weapon. Default: Y / G.");
+    recompinput::set_game_input_description(GameInput::ASSIGN_THROWABLE,
+        "Assign the equipped throwable. Guns and flares cannot be assigned. Default: hold L4 and press Y / Ctrl+G.");
     recompinput::set_default_mapping_for_keyboard(
         GameInput::Z, {InputField::mouse(SDL_BUTTON_LEFT)});
     recompinput::set_default_mapping_for_keyboard(
@@ -639,44 +722,69 @@ void configure_controls() {
         {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_WEST)});
     recompinput::set_default_mapping_for_controller(
         GameInput::QUICK_SWITCH,
-        {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_EAST)});
+        {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_EAST).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2))});
     recompinput::set_default_mapping_for_controller(
         GameInput::QUICK_SWITCH_MODIFIER,
         {InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2)});
     recompinput::set_default_mapping_for_keyboard(
         GameInput::SPRINT, {InputField::keyboard(SDL_SCANCODE_LSHIFT)});
     recompinput::set_default_mapping_for_keyboard(
-        GameInput::QUICK_SWITCH, {InputField::keyboard(SDL_SCANCODE_T)});
+        GameInput::QUICK_SWITCH, {InputField::keyboard(SDL_SCANCODE_T).holding(InputField::keyboard(SDL_SCANCODE_LCTRL)),
+                                 InputField::keyboard(SDL_SCANCODE_T).holding(InputField::keyboard(SDL_SCANCODE_RCTRL))});
+    recompinput::set_default_mapping_for_controller(GameInput::QUICK_SWITCH_STICKS,
+        {InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSTICK).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSTICK)),
+         InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSTICK).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSTICK))});
+    recompinput::set_default_mapping_for_keyboard(GameInput::QUICK_SWITCH_STICKS, {});
+    recompinput::set_game_input_disabled(GameInput::QUICK_SWITCH_MODIFIER, true);
     recompinput::set_default_mapping_for_keyboard(GameInput::QUICK_SWITCH_MODIFIER,
         {InputField::keyboard(SDL_SCANCODE_LCTRL), InputField::keyboard(SDL_SCANCODE_RCTRL)});
     recompinput::set_default_mapping_for_controller(GameInput::QUICK_GRENADE,
         {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_NORTH)});
     recompinput::set_default_mapping_for_keyboard(GameInput::QUICK_GRENADE,
         {InputField::keyboard(SDL_SCANCODE_G)});
+    recompinput::set_default_mapping_for_controller(GameInput::ASSIGN_THROWABLE,
+        {InputField::controller_digital(recompinput::SDL_CONTROLLER_BUTTON_NORTH).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2))});
+    recompinput::set_default_mapping_for_keyboard(GameInput::ASSIGN_THROWABLE,
+        {InputField::keyboard(SDL_SCANCODE_G).holding(InputField::keyboard(SDL_SCANCODE_LCTRL)),
+         InputField::keyboard(SDL_SCANCODE_G).holding(InputField::keyboard(SDL_SCANCODE_RCTRL))});
     constexpr std::array slot_inputs{GameInput::WEAPON_SLOT_1, GameInput::WEAPON_SLOT_2,
         GameInput::WEAPON_SLOT_3, GameInput::WEAPON_SLOT_4};
     constexpr std::array slot_buttons{SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
         SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT};
     constexpr std::array slot_keys{SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4};
+    constexpr std::array assign_inputs{GameInput::ASSIGN_WEAPON_SLOT_1, GameInput::ASSIGN_WEAPON_SLOT_2,
+        GameInput::ASSIGN_WEAPON_SLOT_3, GameInput::ASSIGN_WEAPON_SLOT_4};
     for (unsigned slot = 0; slot < slot_inputs.size(); ++slot) {
         recompinput::set_default_mapping_for_controller(slot_inputs[slot],
             {InputField::controller_digital(slot_buttons[slot])});
         recompinput::set_default_mapping_for_keyboard(slot_inputs[slot], {InputField::keyboard(slot_keys[slot])});
+        recompinput::set_default_mapping_for_controller(assign_inputs[slot],
+            {InputField::controller_digital(slot_buttons[slot]).holding(InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2))});
+        recompinput::set_default_mapping_for_keyboard(assign_inputs[slot],
+            {InputField::keyboard(slot_keys[slot]).holding(InputField::keyboard(SDL_SCANCODE_LCTRL)),
+             InputField::keyboard(slot_keys[slot]).holding(InputField::keyboard(SDL_SCANCODE_RCTRL))});
         recompinput::set_game_input_description(slot_inputs[slot],
-            "Press to select the assigned weapon. Hold L4 / Ctrl and press to assign your current weapon. Saved separately for each character.");
+            "Select the assigned weapon. Assign Weapon Slot has its own binding below. Saved separately for each character.");
+        recompinput::set_game_input_description(assign_inputs[slot], "Assign your equipped weapon to this shortcut.");
     }
     recompinput::set_default_mapping_for_keyboard(
         GameInput::SAVE_STATE, {InputField::keyboard(SDL_SCANCODE_F6)});
     recompinput::set_default_mapping_for_keyboard(
         GameInput::RESTORE_STATE, {InputField::keyboard(SDL_SCANCODE_F9)});
     recompinput::set_default_mapping_for_controller(
-        GameInput::SAVE_STATE, {InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE4)});
+        GameInput::SAVE_STATE, {InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE4).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2))});
     recompinput::set_default_mapping_for_controller(
-        GameInput::RESTORE_STATE, {InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE3)});
+        GameInput::RESTORE_STATE, {InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE3).holding(
+            InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2))});
     recompinput::set_game_input_description(GameInput::SAVE_STATE,
-        "Save the complete game state to disk (Steam Deck L5 / keyboard F6). Separate from ordinary game saves.");
+        "Save the complete game state to disk (hold L4 and press L5 / keyboard F6). Separate from ordinary game saves.");
     recompinput::set_game_input_description(GameInput::RESTORE_STATE,
-        "Restore the manual state, including after restarting the game (Steam Deck R5 / keyboard F9).");
+        "Restore the manual state, including after restarting the game (hold L4 and press R5 / keyboard F9).");
 }
 
 void migrate_default_bindings(const std::filesystem::path& config_path) {
@@ -880,6 +988,45 @@ void migrate_default_bindings(const std::filesystem::path& config_path) {
     }
 }
 
+void migrate_held_bindings(const std::filesystem::path& config_path) {
+    using recompinput::GameInput;
+    using recompinput::InputField;
+    for (int profile = 0; profile < recompinput::profiles::get_input_profile_count(); ++profile) {
+        const auto get = [&](GameInput input) {
+            jfc::BindingAlternatives result{};
+            for (size_t i = 0; i < result.size(); ++i)
+                result[i] = recompinput::profiles::get_input_binding(profile, input, i);
+            return result;
+        };
+        const auto set = [&](GameInput input, const jfc::BindingAlternatives& fields) {
+            for (size_t i = 0; i < fields.size(); ++i)
+                recompinput::profiles::set_input_binding(profile, input, i, fields[i]);
+        };
+        const auto modifiers = get(GameInput::QUICK_SWITCH_MODIFIER);
+        set(GameInput::QUICK_SWITCH, jfc::expand_held_bindings(get(GameInput::QUICK_SWITCH), modifiers));
+        constexpr std::array sources{GameInput::WEAPON_SLOT_1, GameInput::WEAPON_SLOT_2,
+            GameInput::WEAPON_SLOT_3, GameInput::WEAPON_SLOT_4, GameInput::QUICK_GRENADE};
+        constexpr std::array destinations{GameInput::ASSIGN_WEAPON_SLOT_1, GameInput::ASSIGN_WEAPON_SLOT_2,
+            GameInput::ASSIGN_WEAPON_SLOT_3, GameInput::ASSIGN_WEAPON_SLOT_4, GameInput::ASSIGN_THROWABLE};
+        for (size_t i = 0; i < sources.size(); ++i)
+            set(destinations[i], jfc::expand_held_bindings(get(sources[i]), modifiers));
+        if (recompinput::profiles::get_input_profile_device(profile) == recompinput::InputDevice::Controller &&
+            !recompinput::profiles::is_input_profile_custom(profile)) {
+            for (auto action : {GameInput::SAVE_STATE, GameInput::RESTORE_STATE}) {
+                auto fields = get(action);
+                const auto paddle = action == GameInput::SAVE_STATE ? SDL_CONTROLLER_BUTTON_PADDLE4 : SDL_CONTROLLER_BUTTON_PADDLE3;
+                if (fields[0] == InputField::controller_digital(paddle) &&
+                    std::all_of(fields.begin() + 1, fields.end(), [](const auto& field) { return field.is_empty(); })) {
+                    fields[0] = fields[0].holding(InputField::controller_digital(SDL_CONTROLLER_BUTTON_PADDLE2));
+                    set(action, fields);
+                }
+            }
+        }
+    }
+    if (!recompinput::profiles::save_controls_config(config_path / "controls.json"))
+        throw std::runtime_error("Failed to persist held input binding migration");
+}
+
 void migrate_weapon_direction_bindings(const std::filesystem::path& config_path) {
     using recompinput::GameInput;
     using recompinput::InputField;
@@ -947,7 +1094,8 @@ void on_vi() {
         recomp::start_game(startup_game, {});
         startup_game.clear();
     }
-    const uint64_t current_vi = ++vi_number;
+
+    const uint64_t current_vi = ultramodern::is_game_initialized() ? ++vi_number : 0;
     jfc::crash_reporter::set_vi(current_vi);
     recompinput::update_rumble();
 }
@@ -967,7 +1115,7 @@ const char* rom_error(recomp::RomValidationError error) {
     case recomp::RomValidationError::IncorrectRomSize:
         return "the ROM must be exactly 33,554,432 bytes; it may be truncated or modified";
     case recomp::RomValidationError::IncorrectByteOrder:
-        return "the ROM must be the original big-endian .z64 image; byte-swapped images are unsupported";
+        return "the ROM byte order is unsupported; use a valid .z64, .v64 or .n64 image";
     case recomp::RomValidationError::IncorrectRom:
         return "the ROM is not Jet Force Gemini";
     case recomp::RomValidationError::IncorrectVersion:
@@ -989,8 +1137,7 @@ void load_enhancement_config(
         std::get<bool>(general.get_option_value(modern_controls_option)));
     jfc::enhancements::set_mouse_acceleration(
         std::get<bool>(general.get_option_value(mouse_acceleration_option)));
-    jfc::enhancements::set_right_stick_y_inverted(
-        std::get<bool>(general.get_option_value(invert_right_stick_y_option)));
+    load_stick_inversions(general);
     jfc::enhancements::set_joystick_sensitivity(
         static_cast<int>(std::get<double>(general.get_option_value(
             joystick_sensitivity_option))),
@@ -1029,6 +1176,7 @@ void validate_config_schema(
         joystick_sensitivity_option,
         joystick_sensitivity_x_option,
         joystick_sensitivity_y_option,
+        invert_left_stick_x_option, invert_left_stick_y_option, invert_right_stick_x_option,
         invert_right_stick_y_option,
         modernization_schema_option,
     });
@@ -1053,9 +1201,21 @@ void validate_config_schema(
         unlimited_lives_option,
         mission_complete_refill_option,
         double_enemy_drops_option,
+        double_robot_mission_time_option,
+        hide_companion_option,
+        half_boss_health_option,
+        boss_health_hud_option,
+        boss_weak_point_effect_option,
+        mantis_final_vulnerability_option,
+        boss_pistol_damage_option,
+        boss_phase_ammo_option,
         fast_throws_option,
         halo_health_option,
         persistent_dropped_pickups_option,
+        persistent_corpses_option,
+        shotgun_upgrade_option,
+        flamethrower_upgrade_option,
+        shocker_upgrade_option,
         ship_part_scanner_option,
         guidance_text_option,
         modern_health_option,
@@ -1112,6 +1272,7 @@ int run_application(
     });
     const std::string settings_build_label = make_settings_build_label();
     recompui::programconfig::set_build_label(settings_build_label);
+    recompui::programconfig::set_build_details(settings_build_details);
 
     const std::filesystem::path config_path =
         recompui::file::get_app_folder_path();
@@ -1125,6 +1286,11 @@ int run_application(
     jfc::crash_reporter::install(config_path);
     recomp::overlays::register_function_lookup_failure_callback(
         &jfc::crash_reporter::set_function_lookup_failure);
+    jfc::modernization::set_save_metadata_error_reporter([](const char* message) {
+        recompui::queue_ui_action([text = std::string(message)] {
+            recompui::message_box(text.c_str());
+        });
+    });
     if (!jfc::modernization::initialize_save_metadata(config_path)) {
         return EXIT_FAILURE;
     }
@@ -1133,7 +1299,13 @@ int run_application(
     recompui::register_primary_font("LatoLatin-Regular.ttf", "LatoLatin");
     recompui::register_extra_font("LatoLatin-Bold.ttf");
 
-    recomp::config::Config& graphics = recompui::config::create_graphics_tab();
+    jfc::textures::Launcher texture_launcher(config_path);
+    recomp::config::Config& graphics = recompui::config::create_graphics_tab(
+        recompui::config::graphics::tab_name,
+        [&texture_launcher](recompui::ContextId context, recompui::Element* parent) {
+            texture_launcher.init_graphics(context, parent);
+        }, jfc::camera_settings::create_resets);
+    jfc::camera_settings::add_options(graphics);
     graphics.add_number_option(
         draw_distance_option,
         "Draw Distance",
@@ -1166,12 +1338,12 @@ int run_application(
         true);
     qol.add_bool_option(weapon_shortcuts_hud_option,
         "Weapon Shortcut HUD",
-        "Shows assigned weapon icons in a small top-right D-pad. Numbers 1-4 also identify the keyboard shortcuts.",
+        "Shows assigned weapons at the top right: a D-pad for controllers, or four numbered key slots for keyboard controls.",
         true);
     qol.add_bool_option(
         cutscene_skipping_option,
         "Cutscene Skipping",
-        "Allows Start to skip an active cutscene through the game's normal cleanup path.",
+        "Allows Space, Enter, or Start to skip an active cutscene through the game's normal cleanup path.",
         true);
     qol.add_bool_option(
         invulnerable_tribals_option,
@@ -1186,7 +1358,7 @@ int run_application(
         persistent_tribal_rescues_option,
         "Persistent Tribal Rescues",
         "Keeps individually rescued Tribals rescued across level revisits in this save slot.",
-        false);
+        true);
     qol.add_enum_option(
         final_tribal_requirement_option,
         "Final Tribal Requirement",
@@ -1242,6 +1414,22 @@ int run_application(
         "Persistent Dropped Pickups",
         "Dropped health, ammo and collectible heads no longer expire while on the map. Collection and map cleanup still remove them; ordinary debris still fades.",
         false);
+    qol.add_bool_option(shotgun_upgrade_option,
+        "Upgraded Shotgun",
+        "Fires six fully charged energy spheres with a wider spread on each press. Uses one round per blast.",
+        true);
+    qol.add_bool_option(flamethrower_upgrade_option,
+        "Upgraded Flamethrower",
+        "Uses half as much fuel, deals 50% more burning damage and staggers enemies whenever their native hurt reaction is available.",
+        true);
+    qol.add_bool_option(shocker_upgrade_option,
+        "Upgraded Shocker",
+        "Extends beam range fourfold, arcs through up to three adjacent enemies and raises the ammo reserve to at least 100. Earned capacity upgrades are preserved.",
+        true);
+    qol.add_bool_option(persistent_corpses_option,
+        "Persistent Corpses",
+        "Keeps corpses visible until the area is unloaded. Turning this off resumes fading. Native memory cleanup can still remove bodies when needed.",
+        false);
     qol.add_bool_option(mission_complete_refill_option,
         "Mission Complete Refill",
         "Restores health and all owned weapon ammo to current capacity when you dismiss the mission-complete screen. Ordinary doors and deaths are unchanged.",
@@ -1253,6 +1441,38 @@ int run_application(
     qol.add_bool_option(fast_throws_option,
         "Fast Throws",
         "Completes grenade and other throwable animations in half the time, including release and recovery. Projectile speed, fuse and charge time are unchanged.",
+        true);
+    qol.add_bool_option(double_robot_mission_time_option,
+        "Double Robot Mission Time",
+        "Doubles the time limit when starting or retrying a Floyd mission. Flight speed and medal times are unchanged; an active mission keeps its current limit.",
+        false);
+    qol.add_bool_option(hide_companion_option,
+        "Hide Floyd Companion",
+        "Hides the following robot, its shadow and companion crosshair. Floyd missions and story scenes remain visible; gameplay and saves are unchanged.",
+        false);
+    qol.add_bool_option(half_boss_health_option,
+        "Half Boss Health",
+        "Bosses and their weak points start with half their normal health. Applies to new fights and new boss phases; existing saved health, ordinary enemies, weapon damage and vulnerability windows are unchanged.",
+        false);
+    qol.add_bool_option(boss_health_hud_option,
+        "Boss Target Health",
+        "Shows the aimed-at boss body part's remaining health and whether it is vulnerable, protected or destroyed. The bar is relative to original full health, so half-health parts start half full. Different weapons deal different damage.",
+        false);
+    qol.add_bool_option(boss_pistol_damage_option,
+        "Double Pistol Boss Damage",
+        "Player pistol shots deal twice their normal damage to bosses. Other weapons, ordinary enemies and protected weak points are unchanged.",
+        true);
+    qol.add_bool_option(boss_phase_ammo_option,
+        "Boss Phase Ammo Refill",
+        "Restores 25% of each owned weapon's capacity when a boss phase or weak point is defeated, rounded up and capped at capacity. Opening a damage window does not refill ammo.",
+        true);
+    qol.add_bool_option(boss_weak_point_effect_option,
+        "Boss Weak-point Halos",
+        "Marks damageable boss regions with a pulsing green halo. It follows the moving weak point and disappears while protected or destroyed; normal lighting and hit flashes are unchanged.",
+        true);
+    qol.add_bool_option(mantis_final_vulnerability_option,
+        "Open Mechantis Final Phase",
+        "After each mantis loses all its weapons, its final head/body weak point can take damage throughout movement and attacks. Earlier phases, attack animations and the defeat sequence are unchanged.",
         true);
     qol.add_bool_option(halo_health_option,
         "Halo-style Health",
@@ -1296,19 +1516,19 @@ int run_application(
         25, 100, 5, 0, true, 100);
     general.add_number_option(
         joystick_sensitivity_x_option,
-        "Horizontal Sensitivity Fine Adjustment",
+        "Right Stick Horizontal Sensitivity",
         "Fine-tunes horizontal right-stick movement after the general setting.",
         50, 150, 5, 0, true, 100);
     general.add_number_option(
         joystick_sensitivity_y_option,
-        "Vertical Sensitivity Fine Adjustment",
+        "Right Stick Vertical Sensitivity",
         "Fine-tunes vertical right-stick movement after the general setting.",
         50, 150, 5, 0, true, 100);
-    general.add_bool_option(
-        invert_right_stick_y_option,
-        "Invert Right Stick Y Axis",
-        "Reverses vertical right-stick camera and aiming movement.",
-        false);
+    constexpr std::array inversion_labels{"Invert Left Stick X Axis", "Invert Left Stick Y Axis",
+        "Invert Right Stick X Axis", "Invert Right Stick Y Axis"};
+    for (size_t i = 0; i < stick_inversion_options.size(); ++i)
+        general.add_bool_option(stick_inversion_options[i], inversion_labels[i],
+            "Reverses this joystick axis during gameplay. Mouse, keyboard and menu navigation are unchanged.", false);
     general.add_number_option(
         modernization_schema_option,
         "",
@@ -1316,7 +1536,7 @@ int run_application(
         0, JFC_CONFIG_SCHEMA_VERSION, 1, 0, false, 0, true);
     configure_controls();
     recompui::config::create_controls_tab("Bindings");
-    recompui::config::create_sound_tab();
+    jfc::audio_settings::create();
     recompui::config::finalize();
     auto& loaded_general = recompui::config::get_general_config();
     auto& loaded_graphics = recompui::config::get_graphics_config();
@@ -1345,6 +1565,7 @@ int run_application(
         if (changed && !recompinput::profiles::save_controls_config(config_path / "controls.json"))
             throw std::runtime_error("Failed to persist character chord migration");
     }
+    if (stored_schema < 9) migrate_held_bindings(config_path);
     migrate_config_schema(loaded_general, loaded_graphics, loaded_qol);
     if (!std::get<bool>(loaded_graphics.get_option_value(
             full_hud_migration_option))) {
@@ -1371,11 +1592,9 @@ int run_application(
         [](auto value, auto, auto) {
             jfc::enhancements::set_mouse_acceleration(std::get<bool>(value));
         });
-    loaded_general.add_option_change_callback(
-        invert_right_stick_y_option,
-        [](auto value, auto, auto) {
-            jfc::enhancements::set_right_stick_y_inverted(
-                std::get<bool>(value));
+    for (auto option : stick_inversion_options)
+        loaded_general.add_option_change_callback(option, [&loaded_general](auto, auto, auto) {
+            load_stick_inversions(loaded_general);
         });
     const auto update_joystick_sensitivity = [&loaded_general](auto, auto, auto) {
         jfc::enhancements::set_joystick_sensitivity(
@@ -1488,13 +1707,61 @@ int run_application(
         [](auto value, auto, auto) {
             jfc::modernization::set_fast_throws(std::get<bool>(value));
         });
+    loaded_qol.add_option_change_callback(double_robot_mission_time_option,
+        [](auto value, auto, auto) {
+            jfc::modernization::set_double_robot_mission_time(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(hide_companion_option,
+        [](auto value, auto, auto) {
+            jfc::modernization::set_hide_companion(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(half_boss_health_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_half_health(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(boss_health_hud_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_target_hud(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(boss_weak_point_effect_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_weak_point_effect(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(mantis_final_vulnerability_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_mantis_final_vulnerability(std::get<bool>(value));
+        });
     loaded_qol.add_option_change_callback(halo_health_option,
         [](auto value, auto, auto) {
             jfc::modernization::set_halo_health(std::get<bool>(value));
         });
+    loaded_qol.add_option_change_callback(boss_pistol_damage_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_double_pistol_damage(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(boss_phase_ammo_option,
+        [](auto value, auto, auto) {
+            jfc::boss::set_phase_ammo_refill(std::get<bool>(value));
+        });
     loaded_qol.add_option_change_callback(persistent_dropped_pickups_option,
         [](auto value, auto, auto) {
             jfc::modernization::set_persistent_dropped_pickups(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(shotgun_upgrade_option,
+        [](auto value, auto, auto) {
+            jfc::weapons::set_shotgun_upgrade(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(flamethrower_upgrade_option,
+        [](auto value, auto, auto) {
+            jfc::weapons::set_flamethrower_upgrade(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(shocker_upgrade_option,
+        [](auto value, auto, auto) {
+            jfc::weapons::set_shocker_upgrade(std::get<bool>(value));
+        });
+    loaded_qol.add_option_change_callback(persistent_corpses_option,
+        [](auto value, auto, auto) {
+            jfc::modernization::set_persistent_corpses(std::get<bool>(value));
         });
     loaded_qol.add_option_change_callback(modern_health_option,
         [](auto value, auto, auto) { jfc::hud::set_modern_health(std::get<bool>(value)); });
@@ -1520,10 +1787,28 @@ int run_application(
         loaded_qol.get_option_value(double_enemy_drops_option)));
     jfc::modernization::set_fast_throws(std::get<bool>(
         loaded_qol.get_option_value(fast_throws_option)));
+    jfc::modernization::set_double_robot_mission_time(std::get<bool>(
+        loaded_qol.get_option_value(double_robot_mission_time_option)));
+    jfc::modernization::set_hide_companion(std::get<bool>(
+        loaded_qol.get_option_value(hide_companion_option)));
+    jfc::boss::set_half_health(std::get<bool>(loaded_qol.get_option_value(half_boss_health_option)));
+    jfc::boss::set_target_hud(std::get<bool>(loaded_qol.get_option_value(boss_health_hud_option)));
+    jfc::boss::set_weak_point_effect(std::get<bool>(loaded_qol.get_option_value(boss_weak_point_effect_option)));
+    jfc::boss::set_mantis_final_vulnerability(std::get<bool>(loaded_qol.get_option_value(mantis_final_vulnerability_option)));
+    jfc::boss::set_double_pistol_damage(std::get<bool>(loaded_qol.get_option_value(boss_pistol_damage_option)));
+    jfc::boss::set_phase_ammo_refill(std::get<bool>(loaded_qol.get_option_value(boss_phase_ammo_option)));
     jfc::modernization::set_halo_health(std::get<bool>(
         loaded_qol.get_option_value(halo_health_option)));
     jfc::modernization::set_persistent_dropped_pickups(std::get<bool>(
         loaded_qol.get_option_value(persistent_dropped_pickups_option)));
+    jfc::weapons::set_shotgun_upgrade(std::get<bool>(
+        loaded_qol.get_option_value(shotgun_upgrade_option)));
+    jfc::weapons::set_flamethrower_upgrade(std::get<bool>(
+        loaded_qol.get_option_value(flamethrower_upgrade_option)));
+    jfc::weapons::set_shocker_upgrade(std::get<bool>(
+        loaded_qol.get_option_value(shocker_upgrade_option)));
+    jfc::modernization::set_persistent_corpses(std::get<bool>(
+        loaded_qol.get_option_value(persistent_corpses_option)));
     jfc::enhancements::set_cutscene_skipping(
         std::get<bool>(loaded_qol.get_option_value(cutscene_skipping_option)));
     jfc::modernization::set_invulnerable_tribals(
@@ -1556,7 +1841,6 @@ int run_application(
 
     recompinput::players::set_single_player_mode(true);
     recompui::register_ui_exports();
-    jfc_register_overlays();
 
     for (const recomp::GameEntry& game : supported_games) {
         if (!recomp::register_game(game)) {
@@ -1602,9 +1886,9 @@ int run_application(
             },
     };
     const ultramodern::audio_callbacks_t audio_callbacks{
-        queue_samples, frames_remaining, set_frequency};
+        queue_samples, audio_queue_state, set_frequency, set_audio_activity, shutdown_audio};
     const ultramodern::input::callbacks_t input_callbacks{
-        recompinput::poll_inputs,
+        [] { recompinput::poll_inputs(); recompinput::begin_binding_frame(); },
         get_input,
         recompinput::set_rumble,
         connected_device,
@@ -1615,12 +1899,20 @@ int run_application(
     const ultramodern::events::callbacks_t events_callbacks{
         on_vi, nullptr, jfc::enhancements::graphics_task_is_frame,
         jfc::enhancements::graphics_task_framebuffer,
-        jfc::enhancements::graphics_task_cameras,
+        jfc::enhancements::graphics_task_metadata,
         [](ultramodern::events::RspTaskEvent event, uint64_t token, uint32_t task) {
             static constexpr const char *names[] = {"Runtime.RSP.GraphicsStart", "Runtime.RSP.GraphicsResume",
                 "Runtime.RSP.Yield", "Runtime.RSP.GraphicsComplete", "Runtime.RSP.AudioStart", "Runtime.RSP.AudioComplete"};
             RT64::PerformanceProfiler::recordCriticalInstant(RT64::PerformanceCategory::CPU,
                 names[static_cast<uint32_t>(event)], token, task);
+        },
+        [](ultramodern::events::GraphicsTaskEvent event, uint64_t token, uint32_t displayList) {
+            using Event = ultramodern::events::GraphicsTaskEvent;
+            switch (event) {
+            case Event::Submitted: RT64::PerformanceProfiler::recordRuntimeGraphicsTaskSubmitted(token, displayList); break;
+            case Event::Started: RT64::PerformanceProfiler::recordRuntimeGraphicsTaskStarted(token, displayList); break;
+            case Event::Completed: RT64::PerformanceProfiler::recordRuntimeGraphicsTaskCompleted(token, displayList); break;
+            }
         }};
     const ultramodern::error_handling::callbacks_t error_callbacks{
         recompui::message_box};
@@ -1652,12 +1944,13 @@ std::vector<recomp::GameEntry> supported_games = {
         .thumbnail_bytes = {},
         .is_enabled = false,
         .expected_rom_size = 33'554'432,
-        .allow_byteswapped = false,
+        .allow_byteswapped = true,
         .has_compressed_code = false,
         .entrypoint_address = 0xFFFFFFFF80000400ULL,
         .entrypoint = recomp_entrypoint,
         .thread_create_callback = initialize_game_thread,
         .on_init_callback = jfc_load_bootstrap_overlay_data,
+        .prepare_callback = static_cast<bool(*)()>(jfc::local_aot::prepare),
     },
 };
 
@@ -1730,7 +2023,6 @@ int main(int argc, char** argv) {
         "assets/LatoLatin-Regular.ttf",
         "assets/LatoLatin-Bold.ttf",
         "assets/promptfont/promptfont.ttf",
-        "assets/jfg-enhanced-textures.rtz",
         "assets/branding/rt64.json",
         "assets/branding/jet-force-capricorn-logo-v1.png",
     };
@@ -1756,6 +2048,11 @@ int main(int argc, char** argv) {
     }
     catch (const std::exception& exception) {
         std::fprintf(stderr, "Fatal error: %s\n", exception.what());
+    }
+    try { jfc::modernization::flush_save_metadata(); }
+    catch (const std::exception& error) {
+        std::fprintf(stderr, "QoL save did not complete: %s\n", error.what());
+        result = EXIT_FAILURE;
     }
     shutdown_audio();
     NFD_Quit();

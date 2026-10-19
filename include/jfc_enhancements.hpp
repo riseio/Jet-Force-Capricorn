@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <vector>
-#include "ultramodern/camera_sample.hpp"
+#include "ultramodern/graphics_task_metadata.hpp"
 
 namespace jfc::enhancements {
 
@@ -11,6 +11,8 @@ bool graphics_task_is_frame(uint8_t* rdram, uint32_t task);
 const char* try_graphics_task_framebuffer(uint8_t* rdram, uint32_t task, uint32_t& address) noexcept;
 uint32_t graphics_task_framebuffer(uint8_t* rdram, uint32_t task);
 ultramodern::renderer::CameraSamples graphics_task_cameras(uint8_t* rdram, uint32_t task);
+ultramodern::renderer::GraphicsTaskMetadata graphics_task_metadata(uint8_t* rdram, uint32_t task);
+void record_effect_matrix(uint8_t* rdram, uint32_t matrix, uint32_t object);
 
 const char* try_publish_native_frame_time(uint8_t* rdram) noexcept;
 
@@ -20,8 +22,6 @@ const char* try_tag_model_bone_dma(
 void set_modern_controls(bool enabled);
 bool modern_controls_enabled();
 void set_mouse_acceleration(bool enabled);
-void set_right_stick_y_inverted(bool inverted);
-bool right_stick_y_inverted();
 bool physical_aim_active(int controller);
 
 bool grounded_traversal_active(uint8_t* rdram, uint32_t player);

@@ -1,5 +1,5 @@
 diff --git a/librecomp/include/librecomp/game.hpp b/librecomp/include/librecomp/game.hpp
-index 7f1533e..c941e02 100644
+index 7f1533e..b7164b7 100644
 --- a/librecomp/include/librecomp/game.hpp
 +++ b/librecomp/include/librecomp/game.hpp
 @@ -3,0 +4 @@
@@ -12,10 +12,13 @@ index 7f1533e..c941e02 100644
 +        size_t expected_rom_size = 0;
 +        bool allow_byteswapped = true;
 +
-@@ -80,0 +84,2 @@ namespace recomp {
+@@ -40,0 +44,2 @@ namespace recomp {
++        bool (*prepare_callback)() = nullptr;
++
+@@ -80,0 +86,2 @@ namespace recomp {
 +        IncorrectRomSize,
 +        IncorrectByteOrder,
-@@ -100,7 +104,0 @@ namespace recomp {
+@@ -100,7 +106,0 @@ namespace recomp {
 -    /**
 -     * The following arguments contain mandatory callbacks that need to be registered (i.e., can't be `nullptr`):
 -     * - `rsp_callbacks`
@@ -577,7 +580,7 @@ index 62656ad..452eba2 100644
 -        // sram
 +
 diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
-index 1200f77..c3058f0 100644
+index 1200f77..f0cbcd2 100644
 --- a/librecomp/src/recomp.cpp
 +++ b/librecomp/src/recomp.cpp
 @@ -42,0 +43 @@ enum GameStatus {
@@ -732,68 +735,83 @@ index 1200f77..c3058f0 100644
 @@ -553,0 +553,2 @@ moodycamel::LightweightSemaphore graphics_shutdown_ready;
 +std::stop_token ultramodern::shutdown_token() { return host_shutdown.get_token(); }
 +
-@@ -556,2 +557,2 @@ void ultramodern::quit() {
+@@ -554,0 +556 @@ void ultramodern::quit() {
++    ultramodern::set_audio_activity(ultramodern::AudioActivity::Shutdown);
+@@ -556,2 +558,2 @@ void ultramodern::quit() {
 -    GameStatus desired = GameStatus::None;
 -    game_status.compare_exchange_strong(desired, GameStatus::Quit);
 +    host_shutdown.request_stop();
 +    game_status.store(GameStatus::Quit);
-@@ -559,2 +559,0 @@ void ultramodern::quit() {
+@@ -559,2 +560,0 @@ void ultramodern::quit() {
 -    std::lock_guard<std::mutex> lock(current_game_mutex);
 -    current_game.reset();
-@@ -705,2 +704,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -705,2 +705,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -        // TODO refactor this to allow a project to specify what entrypoint function to run for a give game.
 -        case GameStatus::Running:
 +
 +        case GameStatus::Initializing:
-@@ -718,0 +718 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -709,0 +710,3 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
++                    GameStatus preparing = GameStatus::Initializing;
++                    game_status.compare_exchange_strong(preparing, GameStatus::None);
++                    return false;
+@@ -714,0 +718,7 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
++                if (game_entry.prepare_callback && !game_entry.prepare_callback()) {
++                    GameStatus preparing = GameStatus::Initializing;
++                    game_status.compare_exchange_strong(preparing, GameStatus::None);
++                    return host_shutdown.stop_requested();
++                }
 +                if (host_shutdown.stop_requested()) return true;
-@@ -743 +743 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
++
+@@ -718,0 +729 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
++                if (host_shutdown.stop_requested()) return true;
+@@ -743 +754 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -                            mod_error_stream << "\n";                                
 +                            mod_error_stream << "\n";
-@@ -746 +746,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -746 +757,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -                        game_status.store(GameStatus::None);
 +                        GameStatus preparing = GameStatus::Initializing;
 +                        game_status.compare_exchange_strong(preparing, GameStatus::None);
-@@ -755,0 +757,5 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -755,0 +768,5 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +                GameStatus preparing = GameStatus::Initializing;
 +                if (!game_status.compare_exchange_strong(preparing, GameStatus::Running)) {
 +                    return true;
 +                }
 +
-@@ -768,0 +775,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -768,0 +786,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +        case GameStatus::Running:
 +            throw std::logic_error("Native game startup entered twice");
-@@ -769,0 +778 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -769,0 +789 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +    throw std::logic_error("Invalid native game startup status");
-@@ -778 +787 @@ bool recomp::eeprom_allowed() {
+@@ -778 +798 @@ bool recomp::eeprom_allowed() {
 -        save_type == SaveType::Eep4k || 
 +        save_type == SaveType::Eep4k ||
-@@ -785 +794 @@ bool recomp::sram_allowed() {
+@@ -785 +805 @@ bool recomp::sram_allowed() {
 -        save_type == SaveType::Sram || 
 +        save_type == SaveType::Sram ||
-@@ -791 +800 @@ bool recomp::flashram_allowed() {
+@@ -791 +811 @@ bool recomp::flashram_allowed() {
 -        save_type == SaveType::Flashram || 
 +        save_type == SaveType::Flashram ||
-@@ -839,2 +847,0 @@ void recomp::start(
+@@ -839,2 +858,0 @@ void recomp::start(
 -    // Allocate rdram without comitting it. Use a platform-specific virtual allocation function
 -    // that initializes to zero. Protect the region above the memory size to catch accesses to invalid addresses.
-@@ -848 +855 @@ void recomp::start(
+@@ -848 +866 @@ void recomp::start(
 -        // VirtualProtect returns 0 on failure.
 +
-@@ -858 +865 @@ void recomp::start(
+@@ -858 +876 @@ void recomp::start(
 -        // mprotect returns -1 on failure.
 +
-@@ -884 +890,0 @@ void recomp::start(
+@@ -884 +901,0 @@ void recomp::start(
 -        // Loop until the game starts.
-@@ -895 +901 @@ void recomp::start(
+@@ -895 +912 @@ void recomp::start(
 -    graphics_shutdown_ready.signal();
 +    ultramodern::request_game_thread_shutdown();
-@@ -897,0 +904,2 @@ void recomp::start(
+@@ -897,0 +915,2 @@ void recomp::start(
 +
 +    graphics_shutdown_ready.signal();
-@@ -898,0 +907 @@ void recomp::start(
+@@ -898,0 +918,2 @@ void recomp::start(
++    ultramodern::stop_audio();
 +    ultramodern::join_timer_thread();
-@@ -901,2 +910,7 @@ void recomp::start(
+@@ -901,2 +922,7 @@ void recomp::start(
 -    
 -    // Free rdram.
 +    {
@@ -803,10 +821,10 @@ index 1200f77..c3058f0 100644
 +        current_game_mode_id.clear();
 +    }
 +
-@@ -905 +919 @@ void recomp::start(
+@@ -905 +931 @@ void recomp::start(
 -    // VirtualFree returns zero on failure.
 +
-@@ -908 +922 @@ void recomp::start(
+@@ -908 +934 @@ void recomp::start(
 -    // munmap returns -1 on failure.
 +
 diff --git a/librecomp/src/sp.cpp b/librecomp/src/sp.cpp
@@ -902,12 +920,25 @@ index e0d367e..afa32e0 100644
 -//extern "C" int32_t osGetThreadEx(void) {
 -//    return ultramodern::this_thread();
 -//}
+diff --git a/ultramodern/include/ultramodern/audio_activity.hpp b/ultramodern/include/ultramodern/audio_activity.hpp
+new file mode 100644
+index 0000000..409bebc
+--- /dev/null
++++ b/ultramodern/include/ultramodern/audio_activity.hpp
+@@ -0,0 +1,7 @@
++#pragma once
++
++namespace ultramodern {
++enum class AudioActivity { Startup, Gameplay, Paused, Shutdown, Menu, Cutscene, Loading };
++void set_audio_activity(AudioActivity activity);
++void stop_audio();
++}
 diff --git a/ultramodern/include/ultramodern/camera_sample.hpp b/ultramodern/include/ultramodern/camera_sample.hpp
 new file mode 100644
-index 0000000..0e71cf0
+index 0000000..5d4000a
 --- /dev/null
 +++ b/ultramodern/include/ultramodern/camera_sample.hpp
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +#pragma once
 +#include <array>
 +#include <cstdint>
@@ -921,6 +952,8 @@ index 0000000..0e71cf0
 +        uint64_t generation = 0;
 +        std::array<float, 16> view{};
 +        std::array<float, 16> projection{};
++
++        float billboardScale = 0;
 +    };
 +
 +    struct CameraSamples {
@@ -930,7 +963,7 @@ index 0000000..0e71cf0
 +    };
 +}
 diff --git a/ultramodern/include/ultramodern/config.hpp b/ultramodern/include/ultramodern/config.hpp
-index 2f22456..c6decbe 100644
+index 2f22456..5ed725d 100644
 --- a/ultramodern/include/ultramodern/config.hpp
 +++ b/ultramodern/include/ultramodern/config.hpp
 @@ -59,0 +60,10 @@ namespace ultramodern {
@@ -944,16 +977,17 @@ index 2f22456..c6decbe 100644
 +            Enhanced,
 +            OptionCount
 +        };
-@@ -76,0 +87,2 @@ namespace ultramodern {
+@@ -76,0 +87,3 @@ namespace ultramodern {
 +            LightingMode lighting_option;
 +            TextureMode texture_option;
-@@ -85 +97,2 @@ namespace ultramodern {
++            uint64_t texture_request_serial = 0;
+@@ -85 +98,2 @@ namespace ultramodern {
 -        const GraphicsConfig& get_graphics_config();
 +        GraphicsConfig get_graphics_config();
 +        GraphicsConfig get_applied_graphics_config();
-@@ -86,0 +100 @@ namespace ultramodern {
+@@ -86,0 +101 @@ namespace ultramodern {
 +        void set_applied_graphics_config(const GraphicsConfig& new_config);
-@@ -135,0 +150,10 @@ namespace ultramodern {
+@@ -135,0 +151,10 @@ namespace ultramodern {
 +
 +        NLOHMANN_JSON_SERIALIZE_ENUM(ultramodern::renderer::LightingMode, {
 +            {ultramodern::renderer::LightingMode::Original, "Original"},
@@ -1054,61 +1088,97 @@ index 0000000..636eb1e
 +    inline Slots<> slots;
 +}
 diff --git a/ultramodern/include/ultramodern/events.hpp b/ultramodern/include/ultramodern/events.hpp
-index dbb2ea5..5d6f48d 100644
+index dbb2ea5..d110fe3 100644
 --- a/ultramodern/include/ultramodern/events.hpp
 +++ b/ultramodern/include/ultramodern/events.hpp
 @@ -3,0 +4,4 @@
 +#include <cstdint>
 +#include <vector>
-+#include "camera_sample.hpp"
++#include "graphics_task_metadata.hpp"
 +
-@@ -5,0 +10 @@ namespace ultramodern {
+@@ -5,0 +10,2 @@ namespace ultramodern {
 +        enum class RspTaskEvent : uint32_t { GraphicsStart, GraphicsResume, Yield, GraphicsComplete, AudioStart, AudioComplete };
-@@ -10,3 +14,0 @@ namespace ultramodern {
++        enum class GraphicsTaskEvent : uint32_t { Submitted, Started, Completed };
+@@ -10,3 +15,0 @@ namespace ultramodern {
 -            /**
 -             * Called in each VI.
 -             */
-@@ -15,3 +16,0 @@ namespace ultramodern {
+@@ -15,3 +17,0 @@ namespace ultramodern {
 -            /**
 -             * Called before entering the gfx main loop.
 -             */
-@@ -18,0 +18,10 @@ namespace ultramodern {
+@@ -18,0 +19,12 @@ namespace ultramodern {
 +
 +            using gfx_task_is_frame_t = bool(uint8_t* rdram, uint32_t task);
 +            gfx_task_is_frame_t* gfx_task_is_frame = nullptr;
 +
 +            using gfx_task_framebuffer_t = uint32_t(uint8_t* rdram, uint32_t task);
 +            gfx_task_framebuffer_t* gfx_task_framebuffer = nullptr;
-+            using gfx_task_cameras_t = renderer::CameraSamples(uint8_t* rdram, uint32_t task);
-+            gfx_task_cameras_t* gfx_task_cameras = nullptr;
++            using gfx_task_metadata_t = renderer::GraphicsTaskMetadata(uint8_t* rdram, uint32_t task);
++            gfx_task_metadata_t* gfx_task_metadata = nullptr;
 +            using rsp_task_event_t = void(RspTaskEvent, uint64_t token, uint32_t task);
 +            rsp_task_event_t* rsp_task_event = nullptr;
++            using gfx_task_event_t = void(GraphicsTaskEvent, uint64_t token, uint32_t display_list);
++            gfx_task_event_t* gfx_task_event = nullptr;
+diff --git a/ultramodern/include/ultramodern/graphics_task_metadata.hpp b/ultramodern/include/ultramodern/graphics_task_metadata.hpp
+new file mode 100644
+index 0000000..41b2e61
+--- /dev/null
++++ b/ultramodern/include/ultramodern/graphics_task_metadata.hpp
+@@ -0,0 +1,21 @@
++#pragma once
++#include "camera_sample.hpp"
++
++namespace ultramodern::renderer {
++    struct MatrixGeneration {
++        uint32_t address = 0;
++        uint64_t generation = 0;
++    };
++    struct GraphicsTaskMetadata {
++        CameraSamples cameras;
++        std::vector<MatrixGeneration> matrices;
++        bool matrixGenerationsComplete = false;
++        struct TextureScrollRange {
++            uint32_t begin = 0, end = 0;
++            uint64_t generation = 0;
++            uint32_t wrap[2] = {};
++            int64_t phase[2] = {};
++        };
++        std::vector<TextureScrollRange> textureScrolls;
++    };
++}
 diff --git a/ultramodern/include/ultramodern/renderer_context.hpp b/ultramodern/include/ultramodern/renderer_context.hpp
-index d60c4ec..97372c9 100644
+index d60c4ec..e7f592d 100644
 --- a/ultramodern/include/ultramodern/renderer_context.hpp
 +++ b/ultramodern/include/ultramodern/renderer_context.hpp
 @@ -7,0 +8 @@
 +#include <vector>
 @@ -25,0 +27 @@
-+#include "camera_sample.hpp"
++#include "graphics_task_metadata.hpp"
 @@ -50 +52 @@ namespace ultramodern {
 -        // Native HWND handle to the target window.
 +
 @@ -56 +58 @@ namespace ultramodern {
 -// TODO add a native window handle option here (Display/Window for x11 and ANativeWindow for Android) as a compile-time option.
 +
-@@ -74,0 +77,6 @@ namespace ultramodern {
+@@ -72 +74,8 @@ namespace ultramodern {
+-            GraphicsDeviceNotFound
++            GraphicsDeviceNotFound,
++            GraphicsInitializationFailed
++        };
++
 +        class PreparedRendererState {
 +            public:
 +                virtual ~PreparedRendererState() = default;
 +                virtual void commit() noexcept = 0;
-+        };
-+
-@@ -83,0 +92 @@ namespace ultramodern {
+@@ -83,0 +93 @@ namespace ultramodern {
 +                virtual GraphicsConfig get_applied_config() const = 0;
-@@ -86 +95,16 @@ namespace ultramodern {
+@@ -86 +96,20 @@ namespace ultramodern {
 -                virtual void send_dl(const OSTask* task) = 0;
 +                virtual void enable_cpu_framebuffer_completion() = 0;
++
++                virtual void install_cpu_framebuffer_shader(std::span<const uint8_t> spirv,
++                    std::span<const uint8_t> dxil) = 0;
 +                virtual void complete_cpu_framebuffer(uint32_t address, std::span<const uint32_t> effects) = 0;
 +                virtual bool cpu_framebuffer_pending() const = 0;
 +                virtual bool prepare_render_admission(bool auxiliaryTask) = 0;
@@ -1121,26 +1191,29 @@ index d60c4ec..97372c9 100644
 +                    uint32_t triggerMessageQueue,
 +                    uint32_t triggerMessageValue,
 +                    uint64_t submittedTimestampNs,
++                    uint64_t taskToken,
 +                    bool representsGameFrame, uint32_t framebufferAddress,
-+                    const CameraSamples& cameras,
++                    const GraphicsTaskMetadata& metadata,
 +                    void (*task_complete)(void*), void* completion_context) = 0;
-@@ -88,0 +113,5 @@ namespace ultramodern {
+@@ -88 +117,6 @@ namespace ultramodern {
+-                virtual void update_screen() = 0;
++                virtual void update_screen(bool host_redraw = false) = 0;
 +
 +                virtual void run_state_operation(void (*operation)(void*), void* context) = 0;
 +
 +                virtual std::vector<uint8_t> capture_state() = 0;
 +                virtual std::unique_ptr<PreparedRendererState> prepare_state(const std::vector<uint8_t>& image) = 0;
-@@ -102,5 +130,0 @@ namespace ultramodern {
+@@ -102,5 +135,0 @@ namespace ultramodern {
 -            /**
 -             * Instances a subclass of RendererContext that is used to render the game.
 -             *
 -             * This callback is mandatory for using the library.
 -             */
-@@ -109,3 +132,0 @@ namespace ultramodern {
+@@ -109,3 +137,0 @@ namespace ultramodern {
 -            /**
 -             * This callback is optional. If not provided a library default will be used.
 -             */
-@@ -116,0 +138,5 @@ namespace ultramodern {
+@@ -116,0 +143,5 @@ namespace ultramodern {
 +        void complete_cpu_framebuffer(uint8_t* rdram, uint32_t scratch, uint32_t address,
 +            std::span<const uint32_t> effects = {});
 +
@@ -1238,10 +1311,10 @@ index 0000000..d417b8c
 +}
 diff --git a/ultramodern/include/ultramodern/rt64_guest_vi_bridge.hpp b/ultramodern/include/ultramodern/rt64_guest_vi_bridge.hpp
 new file mode 100644
-index 0000000..5805048
+index 0000000..78114f7
 --- /dev/null
 +++ b/ultramodern/include/ultramodern/rt64_guest_vi_bridge.hpp
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +#pragma once
 +
 +#include "ultramodern/diagnostic_vi_messages.hpp"
@@ -1260,7 +1333,8 @@ index 0000000..5805048
 +    }
 +
 +    inline void install() {
-+        if (!PerformanceProfiler::enabled()) return;
++
++        if (PerformanceProfiler::mode() == PerformanceCaptureMode::Disabled) return;
 +        PerformanceProfiler::setMetadata("producer.guest_vi.supported", "1");
 +        PerformanceProfiler::setMetadata("producer.guest_vi.enabled", "1");
 +        PerformanceProfiler::setMetadata("producer.guest_vi.owner", "guest_retrace_consumption");
@@ -1269,7 +1343,7 @@ index 0000000..5805048
 +}
 diff --git a/ultramodern/include/ultramodern/state.hpp b/ultramodern/include/ultramodern/state.hpp
 new file mode 100644
-index 0000000..bfe1e21
+index 0000000..168530e
 --- /dev/null
 +++ b/ultramodern/include/ultramodern/state.hpp
 @@ -0,0 +1,94 @@
@@ -1339,7 +1413,7 @@ index 0000000..bfe1e21
 +};
 +class VideoPause {
 +public:
-+    VideoPause();
++    explicit VideoPause(bool keep_presenting = false);
 +    ~VideoPause();
 +    VideoPause(const VideoPause&) = delete;
 +    VideoPause& operator=(const VideoPause&) = delete;
@@ -1368,10 +1442,14 @@ index 0000000..bfe1e21
 +
 +}
 diff --git a/ultramodern/include/ultramodern/threads.hpp b/ultramodern/include/ultramodern/threads.hpp
-index 0bf0f98..d61e668 100644
+index 0bf0f98..1a18596 100644
 --- a/ultramodern/include/ultramodern/threads.hpp
 +++ b/ultramodern/include/ultramodern/threads.hpp
-@@ -13,7 +12,0 @@ namespace ultramodern {
+@@ -8,0 +9,3 @@ namespace ultramodern {
++
++    void poll_pending_events(RDRAM_ARG1);
++
+@@ -13,7 +15,0 @@ namespace ultramodern {
 -            /**
 -             * Allows to specifying a custom name for each thread. Mainly for debugging purposes.
 -             *
@@ -1379,7 +1457,7 @@ index 0bf0f98..d61e668 100644
 -             *
 -             * If this function is not provided then the thread id will be used as the name of the thread.
 -             */
-@@ -25,0 +19,3 @@ namespace ultramodern {
+@@ -25,0 +22,3 @@ namespace ultramodern {
 +
 +        void set_state_idle_callback(void (*callback)(uint8_t*));
 +        void state_idle_checkpoint(uint8_t* rdram);
@@ -1576,20 +1654,22 @@ index 31eb106..19c1248 100644
 -} // extern "C"
 +}
 diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
-index 3b28af3..12a6607 100644
+index 3b28af3..33a4655 100644
 --- a/ultramodern/include/ultramodern/ultramodern.hpp
 +++ b/ultramodern/include/ultramodern/ultramodern.hpp
 @@ -4,0 +5,2 @@
 +#include <stop_token>
 +#include <atomic>
-@@ -24,0 +27,6 @@ struct UltraThreadContext {
+@@ -17,0 +20 @@
++#include "ultramodern/audio_activity.hpp"
+@@ -24,0 +28,6 @@ struct UltraThreadContext {
 +
 +    int32_t guest_address = 0;
 +    int32_t guest_entrypoint = 0;
 +    int32_t guest_argument = 0;
 +    int32_t guest_initial_sp = 0;
 +    int32_t guest_id = 0;
-@@ -27,0 +36,9 @@ struct UltraThreadContext {
+@@ -27,0 +37,9 @@ struct UltraThreadContext {
 +    moodycamel::LightweightSemaphore creator_released;
 +    std::atomic_bool diagnosticSubmitsGraphicsTasks = false;
 +    uint64_t diagnosticTriggerMessageEnqueueTimestampNs = 0;
@@ -1599,44 +1679,60 @@ index 3b28af3..12a6607 100644
 +    uint64_t diagnosticGraphicsThreadResumeWakeTimestampNs = 0;
 +    uint32_t diagnosticTriggerMessageQueue = 0;
 +    uint32_t diagnosticTriggerMessageValue = 0;
-@@ -32 +49 @@ namespace ultramodern {
+@@ -32 +50 @@ namespace ultramodern {
 -constexpr uint32_t save_size = 1024 * 1024 / 8; // Maximum save size, 1Mbit for flash
 +constexpr uint32_t save_size = 1024 * 1024 / 8;
-@@ -34 +50,0 @@ constexpr uint32_t save_size = 1024 * 1024 / 8; // Maximum save size, 1Mbit for
+@@ -34 +51,0 @@ constexpr uint32_t save_size = 1024 * 1024 / 8; // Maximum save size, 1Mbit for
 -// Initialization.
-@@ -41 +56,0 @@ void init_thread_cleanup();
+@@ -41 +57,0 @@ void init_thread_cleanup();
 -// Saving
-@@ -45 +59,0 @@ std::filesystem::path get_save_file_path();
+@@ -45 +60,0 @@ std::filesystem::path get_save_file_path();
 -// Thread queues.
-@@ -54 +67,0 @@ PTR(OSThread) thread_queue_peek(RDRAM_ARG PTR(PTR(OSThread)) queue);
+@@ -54 +68,0 @@ PTR(OSThread) thread_queue_peek(RDRAM_ARG PTR(PTR(OSThread)) queue);
 -// Message queues.
-@@ -55,0 +69 @@ void enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool re
+@@ -55,0 +70 @@ void enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool re
 +void enqueue_external_vi_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked);
-@@ -59 +72,0 @@ void wait_for_external_message_timed(RDRAM_ARG1, u32 millis);
+@@ -59 +73,0 @@ void wait_for_external_message_timed(RDRAM_ARG1, u32 millis);
 -// Thread scheduling.
-@@ -65,0 +79,2 @@ struct thread_terminated : std::exception {};
+@@ -65,0 +80,2 @@ struct thread_terminated : std::exception {};
 +void throw_if_exiting();
 +void request_game_thread_shutdown();
-@@ -80,0 +96,2 @@ void submit_rsp_task(RDRAM_ARG PTR(OSTask) task);
+@@ -80,0 +97,2 @@ void submit_rsp_task(RDRAM_ARG PTR(OSTask) task);
 +void yield_rsp_task();
 +bool rsp_task_yielded(uint32_t task);
-@@ -84 +100,0 @@ uint32_t get_speed_multiplier();
+@@ -84 +101,0 @@ uint32_t get_speed_multiplier();
 -// Time
-@@ -91 +106,0 @@ void sleep_until(const std::chrono::high_resolution_clock::time_point& time_poin
+@@ -91 +107,0 @@ void sleep_until(const std::chrono::high_resolution_clock::time_point& time_poin
 -// Graphics
-@@ -97 +111,0 @@ void trigger_config_action();
+@@ -97 +112,0 @@ void trigger_config_action();
 -// Audio
-@@ -112 +125,0 @@ struct audio_callbacks_t {
+@@ -102,0 +118,6 @@ uint32_t get_remaining_audio_bytes();
++struct audio_queue_state_t {
++
++    size_t playable_frames = 0;
++    size_t pending_input_frames = 0;
++};
++
+@@ -105 +126 @@ struct audio_callbacks_t {
+-    using get_samples_remaining_t = size_t();
++    using get_queue_state_t = audio_queue_state_t();
+@@ -108 +129 @@ struct audio_callbacks_t {
+-    get_samples_remaining_t* get_frames_remaining;
++    get_queue_state_t* get_queue_state;
+@@ -109,0 +131,2 @@ struct audio_callbacks_t {
++    void (*set_activity)(AudioActivity) = nullptr;
++    void (*stop)() = nullptr;
+@@ -112 +134,0 @@ struct audio_callbacks_t {
 -// TODO: Most of the members of this struct are not used by ultramodern. Should we move them to librecomp instead?
-@@ -124,0 +138,2 @@ bool is_game_started();
+@@ -124,0 +147,2 @@ bool is_game_started();
 +
 +bool is_game_initialized();
-@@ -125,0 +141,2 @@ void quit();
+@@ -125,0 +150,2 @@ void quit();
 +
 +std::stop_token shutdown_token();
-@@ -126,0 +144 @@ void join_event_threads();
+@@ -126,0 +153 @@ void join_event_threads();
 +void join_timer_thread();
-@@ -132,9 +149,0 @@ void set_audio_callbacks(const audio_callbacks_t& callbacks);
+@@ -132,9 +158,0 @@ void set_audio_callbacks(const audio_callbacks_t& callbacks);
 -/**
 - * Register all the callbacks used by `ultramodern`, most of them being optional.
 - *
@@ -1646,41 +1742,66 @@ index 3b28af3..12a6607 100644
 - *
 - * It must be called only once and it must be called before `ultramodern::preinit`.
 - */
-@@ -151 +160 @@ void set_callbacks(
+@@ -151 +169 @@ void set_callbacks(
 -} // namespace ultramodern
 +}
-@@ -156 +164,0 @@ void set_callbacks(
+@@ -156 +173,0 @@ void set_callbacks(
 -//#define debug_printf(...) printf(__VA_ARGS__);
 diff --git a/ultramodern/src/audio.cpp b/ultramodern/src/audio.cpp
-index 3198be0..bd48934 100644
+index 3198be0..fec89aa 100644
 --- a/ultramodern/src/audio.cpp
 +++ b/ultramodern/src/audio.cpp
-@@ -3,0 +4,5 @@
+@@ -3,0 +4,6 @@
 +#include <algorithm>
 +#include <cmath>
 +#include <limits>
 +#include <stdexcept>
++#include <cstdio>
 +#include "ultramodern/state.hpp"
-@@ -14 +19 @@ void ultramodern::init_audio() {
+@@ -14 +20 @@ void ultramodern::init_audio() {
 -    // Pick an initial dummy sample rate; this will be set by the game later to the true sample rate.
 +
-@@ -26 +31 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
+@@ -26,9 +32,12 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
 -    // Ensure that the byte count is an integer multiple of samples.
-+
-@@ -29 +33,0 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
+-    assert((byte_count & 1) == 0);
+-
 -    // Calculate the number of samples from the number of bytes.
-@@ -32 +35,0 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
+-    uint32_t sample_count = byte_count / sizeof(int16_t);
+-
 -    // Queue the swapped audio data.
-@@ -38,3 +40,0 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
+-    if (sample_count > 0 && audio_callbacks.queue_samples) {
+-        audio_callbacks.queue_samples(TO_PTR(int16_t, audio_data_), sample_count);
++    if (byte_count == 0) return;
++    constexpr uint32_t rdram_bytes = 8 * 1024 * 1024;
++    const auto address = static_cast<uint32_t>(audio_data_);
++    const auto segment = address & 0xe0000000U;
++    const auto offset = address & 0x1fffffffU;
++    if (!rdram || (segment != 0x80000000U && segment != 0xa0000000U) ||
++        (address & 3U) || (byte_count & 3U) || offset >= rdram_bytes ||
++        byte_count > rdram_bytes - offset) {
++        char message[160];
++        std::snprintf(message, sizeof(message),
++            "Invalid AI stereo DMA: address=0x%08X bytes=%u (8 MiB RDRAM)", address, byte_count);
++        throw std::runtime_error(message);
+@@ -35,0 +45,2 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
++    if (audio_callbacks.queue_samples)
++        audio_callbacks.queue_samples(reinterpret_cast<int16_t*>(rdram + offset), byte_count / sizeof(int16_t));
+@@ -38,3 +48,0 @@ void ultramodern::queue_audio_buffer(RDRAM_ARG PTR(int16_t) audio_data_, uint32_
 -// For SDL2
 -//uint32_t buffer_offset_frames = 1;
 -// For Godot
-@@ -43,3 +43,13 @@ float buffer_offset_frames = 0.5f;
+@@ -43,3 +51,19 @@ float buffer_offset_frames = 0.5f;
 -// If there's ever any audio popping, check here first. Some games are very sensitive to
 -// the remaining sample count and reporting a number that's too high here can lead to issues.
 -// Reporting a number that's too low can lead to audio lag in some games.
 +ultramodern::state::AudioState ultramodern::state::capture_audio() {
 +    return {sample_rate, buffer_offset_frames};
++}
++void ultramodern::set_audio_activity(AudioActivity activity) {
++    if (audio_callbacks.set_activity) audio_callbacks.set_activity(activity);
++}
++void ultramodern::stop_audio() {
++    if (audio_callbacks.stop) audio_callbacks.stop();
 +}
 +void ultramodern::state::validate_audio(const AudioState& saved) {
 +    if (saved.sample_rate < 8000 || saved.sample_rate > 192000 ||
@@ -1692,22 +1813,25 @@ index 3198be0..bd48934 100644
 +    buffer_offset_frames = saved.feedback_offset;
 +}
 +
-@@ -47,2 +57,5 @@ uint32_t ultramodern::get_remaining_audio_bytes() {
+@@ -47,4 +71,13 @@ uint32_t ultramodern::get_remaining_audio_bytes() {
 -    // Get the number of remaining buffered audio bytes.
 -    uint32_t buffered_byte_count;
+-    if (audio_callbacks.get_frames_remaining != nullptr) {
+-        buffered_byte_count = audio_callbacks.get_frames_remaining() * 2 * sizeof(int16_t);
 +
 +    constexpr uint32_t bytes_per_frame = 2 * sizeof(int16_t);
 +    const auto lookahead_bytes = static_cast<uint64_t>(
 +        double(buffer_offset_frames) * double(sample_rate) * bytes_per_frame / 60.0);
 +    uint64_t buffered_byte_count;
-@@ -50 +63,5 @@ uint32_t ultramodern::get_remaining_audio_bytes() {
--        buffered_byte_count = audio_callbacks.get_frames_remaining() * 2 * sizeof(int16_t);
-+        const auto frames = audio_callbacks.get_frames_remaining();
++    if (audio_callbacks.get_queue_state != nullptr) {
++        const auto queue = audio_callbacks.get_queue_state();
++
++        const auto frames = queue.playable_frames;
 +
 +        const uint64_t frame_limit =
 +            (uint64_t(std::numeric_limits<uint32_t>::max()) + lookahead_bytes) / bytes_per_frame + 1;
 +        buffered_byte_count = std::min<uint64_t>(frames, frame_limit) * bytes_per_frame;
-@@ -55,12 +72,5 @@ uint32_t ultramodern::get_remaining_audio_bytes() {
+@@ -55,12 +88,5 @@ uint32_t ultramodern::get_remaining_audio_bytes() {
 -    // Adjust the reported count to be some number of refreshes in the future, which helps ensure that
 -    // there are enough samples even if the audio thread experiences a small amount of lag. This prevents
 -    // audio popping on games that use the buffered audio byte count to determine how many samples
@@ -1726,7 +1850,7 @@ index 3198be0..bd48934 100644
 +    return static_cast<uint32_t>(std::min<uint64_t>(
 +        remaining_bytes, std::numeric_limits<uint32_t>::max()));
 diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
-index 090cc42..188a1ba 100644
+index 090cc42..29e76fa 100644
 --- a/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
 @@ -4,0 +5 @@
@@ -1753,13 +1877,15 @@ index 090cc42..188a1ba 100644
 +    uint32_t triggerMessageValue;
 +    bool representsGameFrame;
 +    uint32_t framebufferAddress;
-+    ultramodern::renderer::CameraSamples cameras;
++    ultramodern::renderer::GraphicsTaskMetadata metadata;
 @@ -30,0 +51,4 @@ struct SpTaskAction {
 +struct RspTaskAction { OSTask task; uint64_t token; };
 +static std::mutex rsp_lifecycle_mutex;
 +static ultramodern::rsp::TaskLifecycle rsp_lifecycle;
 +
-@@ -42 +66,17 @@ struct DummyWorkloadAction {
+@@ -32,0 +57 @@ struct ScreenUpdateAction {
++    bool host_redraw = false;
+@@ -42 +67,17 @@ struct DummyWorkloadAction {
 -using Action = std::variant<SpTaskAction, ScreenUpdateAction, UpdateConfigAction, DummyWorkloadAction>;
 +struct StateOperation {
 +    void (*operation)(ultramodern::renderer::RendererContext&, void*);
@@ -1778,33 +1904,33 @@ index 090cc42..188a1ba 100644
 +struct RenderAdmissionAction { PTR(OSMesgQueue) queue; bool auxiliaryTask; };
 +
 +using Action = std::variant<SpTaskAction, ScreenUpdateAction, UpdateConfigAction, DummyWorkloadAction, StateAction, CpuFramebufferAction, RenderAdmissionAction>;
-@@ -61,0 +102 @@ static struct {
+@@ -61,0 +103 @@ static struct {
 +        int remaining_retraces = 1;
-@@ -80 +120,0 @@ static struct {
+@@ -80 +121,0 @@ static struct {
 -            // Process the VI state flags.
-@@ -92,3 +131,0 @@ static struct {
+@@ -92,3 +132,0 @@ static struct {
 -            // TODO implement osViFade
 -
 -            // Update VI registers.
-@@ -102 +139 @@ static struct {
+@@ -102 +140 @@ static struct {
 -            regs.VI_V_START_REG = field_regs->vStart; // TODO implement osViExtendVStart
 +            regs.VI_V_START_REG = field_regs->vStart;
-@@ -105,2 +142,2 @@ static struct {
+@@ -105,2 +143,2 @@ static struct {
 -            regs.VI_X_SCALE_REG = common_regs->xScale; // TODO implement osViSetXScale
 -            regs.VI_Y_SCALE_REG = yScale; // TODO implement osViSetYScale
 +            regs.VI_X_SCALE_REG = common_regs->xScale;
 +            regs.VI_Y_SCALE_REG = yScale;
-@@ -108,2 +145 @@ static struct {
+@@ -108,2 +146 @@ static struct {
 -            
 -            // Swap VI states.
 +
-@@ -132 +168 @@ static struct {
+@@ -132 +169 @@ static struct {
 -    // The same message queue may be used for multiple events, so share a mutex for all of them
 +
-@@ -136 +172 @@ static struct {
+@@ -136 +173 @@ static struct {
 -    moodycamel::BlockingConcurrentQueue<OSTask*> sp_task_queue{};
 +    moodycamel::BlockingConcurrentQueue<std::optional<RspTaskAction>> sp_task_queue{};
-@@ -139,0 +176,27 @@ static struct {
+@@ -139,0 +177,29 @@ static struct {
 +std::mutex gfx_action_shutdown_mutex;
 +bool gfx_actions_open = false;
 +static std::atomic_bool state_operation_active{false};
@@ -1812,6 +1938,8 @@ index 090cc42..188a1ba 100644
 +static std::mutex video_pause_mutex;
 +static std::condition_variable video_pause_changed;
 +static bool video_parked = false;
++static bool paused_presentation = false;
++static std::atomic<bool> paused_redraw_pending{false};
 +static bool video_finished = false;
 +static thread_local bool inside_state_operation = false;
 +
@@ -1832,19 +1960,19 @@ index 090cc42..188a1ba 100644
 +    }
 +}
 +
-@@ -176 +238,0 @@ uint64_t total_vis = 0;
+@@ -176 +241,0 @@ uint64_t total_vis = 0;
 -
-@@ -184,2 +246 @@ void vi_thread_func() {
+@@ -184,2 +249 @@ void vi_thread_func() {
 -    // This thread should be prioritized over every other thread in the application, as it's what allows
 -    // the game to generate new audio and gfx lists.
 +
-@@ -189 +250 @@ void vi_thread_func() {
+@@ -189 +253 @@ void vi_thread_func() {
 -    int remaining_retraces = 1;
 +    int& remaining_retraces = events_context.vi.remaining_retraces;
-@@ -192 +253 @@ void vi_thread_func() {
+@@ -192 +256 @@ void vi_thread_func() {
 -        // Determine the next VI time (more accurate than adding 16ms each VI interrupt)
 +
-@@ -194,9 +255 @@ void vi_thread_func() {
+@@ -194,9 +258 @@ void vi_thread_func() {
 -        //if (next > std::chrono::high_resolution_clock::now()) {
 -        //    printf("Sleeping for %" PRIu64 " us to get from %" PRIu64 " us to %" PRIu64 " us \n",
 -        //        (next - std::chrono::high_resolution_clock::now()) / 1us,
@@ -1855,58 +1983,64 @@ index 090cc42..188a1ba 100644
 -        //}
 -        // Detect if there's more than a second to wait and wait a fixed amount instead for the next VI if so, as that usually means the system clock went back in time.
 +
-@@ -204 +257 @@ void vi_thread_func() {
+@@ -204 +260 @@ void vi_thread_func() {
 -            // printf("Skipping the next VI wait\n");
 +
-@@ -207,0 +261,11 @@ void vi_thread_func() {
+@@ -207,0 +264,17 @@ void vi_thread_func() {
 +        if (video_pause_requested.load(std::memory_order_acquire)) {
 +            std::unique_lock lock(video_pause_mutex);
 +            video_parked = true;
 +            video_pause_changed.notify_all();
 +            while (video_pause_requested.load(std::memory_order_acquire) && !exited.load()) {
-+                video_pause_changed.wait_for(lock, 10ms);
++                if (paused_presentation) {
++                    if (!paused_redraw_pending.exchange(true, std::memory_order_acq_rel))
++                        events_context.action_queue.enqueue(ScreenUpdateAction{events_context.vi.regs, true});
++                    video_pause_changed.wait_for(lock, 16ms);
++                } else {
++                    video_pause_changed.wait_for(lock, 10ms);
++                }
 +            }
 +            video_parked = false;
 +            video_pause_changed.notify_all();
 +        }
 +        if (exited.load()) break;
-@@ -209 +273 @@ void vi_thread_func() {
+@@ -209 +282 @@ void vi_thread_func() {
 -        // Calculate how many VIs have passed
 +
-@@ -212 +276 @@ void vi_thread_func() {
+@@ -212 +285 @@ void vi_thread_func() {
 -            //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
 +
-@@ -216,2 +280,2 @@ void vi_thread_func() {
+@@ -216,2 +289,2 @@ void vi_thread_func() {
 -        // If the game hasn't started yet, set a dummy VI mode and origin.
 -        if (!ultramodern::is_game_started()) {
 +        const bool game_initialized = ultramodern::is_game_initialized();
 +        if (!game_initialized) {
-@@ -225,2 +288,0 @@ void vi_thread_func() {
+@@ -225,2 +297,0 @@ void vi_thread_func() {
 -        // Queue a screen update for the graphics thread with the current VI register state.
 -        // Doing this before the VI update is equivalent to updating the screen after the previous frame's scanout finished.
-@@ -229 +290,0 @@ void vi_thread_func() {
+@@ -229 +299,0 @@ void vi_thread_func() {
 -        // Update VI registers and swap VI modes.
-@@ -232,2 +293 @@ void vi_thread_func() {
+@@ -232,2 +302 @@ void vi_thread_func() {
 -        // If the game has started, handle sending VI and AI events.
 -        if (ultramodern::is_game_started()) {
 +        if (game_initialized) {
-@@ -235 +295 @@ void vi_thread_func() {
+@@ -235 +304 @@ void vi_thread_func() {
 -            
 +
-@@ -240,3 +300,2 @@ void vi_thread_func() {
+@@ -240,3 +309,2 @@ void vi_thread_func() {
 -                    // Send a message to the VI queue, and do not set it to be requeued if the queue was full.
 -                    // The worst case scenario is that the game misses a VI message and has to wait a little longer for the next. 
 -                    ultramodern::enqueue_external_message(cur_state->mq, cur_state->msg, false, false);
 +
 +                    ultramodern::enqueue_external_vi_message(cur_state->mq, cur_state->msg, false, false);
-@@ -247 +306 @@ void vi_thread_func() {
+@@ -247 +315 @@ void vi_thread_func() {
 -                // Send a message to the VI queue, and do not set it to be requeued if the queue was full for the same reason as the VI message above.
 +
-@@ -255,0 +315,3 @@ void vi_thread_func() {
+@@ -255,0 +324,3 @@ void vi_thread_func() {
 +    std::lock_guard lock(video_pause_mutex);
 +    video_finished = true;
 +    video_pause_changed.notify_all();
-@@ -269,0 +332,22 @@ void dp_complete() {
+@@ -269,0 +341,25 @@ void dp_complete() {
 +static void publish_rsp_result(const ultramodern::rsp::TaskLifecycle::Result &result) {
 +
 +    if (result.spInterrupt) sp_complete();
@@ -1915,6 +2049,9 @@ index 090cc42..188a1ba 100644
 +
 +static void observe_rsp(ultramodern::events::RspTaskEvent event, uint64_t token, uint32_t address = 0) {
 +    if (events_callbacks.rsp_task_event) events_callbacks.rsp_task_event(event, token, address);
++}
++static void observe_graphics(ultramodern::events::GraphicsTaskEvent event, uint64_t token, uint32_t displayList) {
++    if (events_callbacks.gfx_task_event) events_callbacks.gfx_task_event(event, token, displayList);
 +}
 +
 +void ultramodern::yield_rsp_task() {
@@ -1929,32 +2066,32 @@ index 090cc42..188a1ba 100644
 +    return rsp_lifecycle.yielded(task);
 +}
 +
-@@ -274 +357,0 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
+@@ -274 +369,0 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
 -    // Notify the caller thread that this thread is ready.
-@@ -278,2 +361,2 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
+@@ -278,2 +373,2 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
 -        // Wait until an RSP task has been sent
 -        OSTask* task;
 +
 +        std::optional<RspTaskAction> task;
-@@ -282 +365 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
+@@ -282 +377 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
 -        if (task == nullptr) {
 +        if (!task) {
-@@ -286,2 +369,2 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
+@@ -286,2 +381,2 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
 -        if (!ultramodern::rsp::run_task(PASS_RDRAM task)) {
 -            fprintf(stderr, "Failed to execute task type: %" PRIu32 "\n", task->t.type);
 +        if (!ultramodern::rsp::run_task(PASS_RDRAM &task->task)) {
 +            fprintf(stderr, "Failed to execute task type: %" PRIu32 "\n", task->task.t.type);
-@@ -291,2 +374,4 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
+@@ -291,2 +386,4 @@ void task_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_r
 -        // Tell the game that the RSP has completed
 -        sp_complete();
 +        std::lock_guard lock(rsp_lifecycle_mutex);
 +        const auto result = rsp_lifecycle.completeAudio(task->token);
 +        observe_rsp(ultramodern::events::RspTaskEvent::AudioComplete, task->token);
 +        publish_rsp_result(result);
-@@ -300 +385 @@ uint32_t ultramodern::get_target_framerate(uint32_t original) {
+@@ -300 +397 @@ uint32_t ultramodern::get_target_framerate(uint32_t original) {
 -    auto& config = ultramodern::renderer::get_graphics_config();
 +    const auto config = ultramodern::renderer::get_graphics_config();
-@@ -342 +427,6 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -342 +439,6 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -        // Notify the caller thread that this thread is ready.
 +        {
 +            std::lock_guard lock{gfx_action_shutdown_mutex};
@@ -1962,13 +2099,13 @@ index 090cc42..188a1ba 100644
 +            cancel_pending_gfx_actions();
 +        }
 +
-@@ -346,0 +437,3 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -346,0 +449,3 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +    ultramodern::renderer::set_applied_graphics_config(
 +        renderer_context->get_applied_config());
 +
-@@ -353 +445,0 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -353 +457,0 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -    // Notify the caller thread that this thread is ready.
-@@ -356,5 +448,3 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -356,5 +460,3 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -    while (!exited) {
 -        // Try to pull an action from the queue
 -        Action action;
@@ -1977,13 +2114,15 @@ index 090cc42..188a1ba 100644
 +    bool config_update_pending = false;
 +    const auto dispatch = [&](const Action& action) {
 +
-@@ -362,5 +451,0 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -362,5 +463,0 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -                // Tell the game that the RSP completed instantly. This will allow it to queue other task types, but it won't
 -                // start another graphics task until the RDP is also complete. Games usually preserve the RSP inputs until the RDP
 -                // is finished as well, so sending this early shouldn't be an issue in most cases.
 -                // If this causes issues then the logic can be replaced with responding to yield requests.
 -                sp_complete();
-@@ -371,0 +457,20 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -369,0 +467 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
++                observe_graphics(ultramodern::events::GraphicsTaskEvent::Started, task_action->token, uint32_t(displaylist));
+@@ -371,0 +470,21 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +                struct Completion {
 +                    PTR(u64) displaylist;
 +                    uint64_t token;
@@ -1995,6 +2134,7 @@ index 090cc42..188a1ba 100644
 +                        return;
 +                    }
 +                    completion.completed = true;
++                    observe_graphics(ultramodern::events::GraphicsTaskEvent::Completed, completion.token, uint32_t(completion.displaylist));
 +                    ultramodern::extensions::on_displaylist_parsed(completion.displaylist);
 +                    ultramodern::extensions::on_displaylist_completed(completion.displaylist);
 +
@@ -2004,7 +2144,7 @@ index 090cc42..188a1ba 100644
 +                    publish_rsp_result(result);
 +                };
 +
-@@ -373 +478,15 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -373 +492,16 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -                renderer_context->send_dl(&task_action->task);
 +                renderer_context->send_dl(
 +                    &task_action->task,
@@ -2017,11 +2157,12 @@ index 090cc42..188a1ba 100644
 +                    task_action->triggerMessageQueue,
 +                    task_action->triggerMessageValue,
 +                    task_action->submittedTimestampNs,
++                    task_action->token,
 +                    task_action->representsGameFrame,
 +                    task_action->framebufferAddress,
-+                    task_action->cameras,
++                    task_action->metadata,
 +                    completeTask, &completion);
-@@ -376,5 +495,2 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -376,5 +510,2 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 -                dp_complete();
 -                // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
 -                ultramodern::extensions::on_displaylist_parsed(displaylist);
@@ -2029,16 +2170,21 @@ index 090cc42..188a1ba 100644
 -                // printf("Renderer ProcessDList time: %d us\n", static_cast<u32>(std::chrono::duration_cast<std::chrono::microseconds>(renderer_end - renderer_start).count()));
 +                completeTask(&completion);
 +
-@@ -389,0 +506,5 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -384 +515,3 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+-                renderer_context->update_screen();
++                renderer_context->update_screen(screen_update_action->host_redraw);
++                if (screen_update_action->host_redraw)
++                    paused_redraw_pending.store(false, std::memory_order_release);
+@@ -389,0 +523,5 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +
 +                if (renderer_context->cpu_framebuffer_pending()) {
 +                    config_update_pending = true;
 +                    return;
 +                }
-@@ -392,0 +514,2 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -392,0 +531,2 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +                    ultramodern::renderer::set_applied_graphics_config(
 +                        renderer_context->get_applied_config());
-@@ -397,0 +521,52 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+@@ -397,0 +538,56 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +            else if (const auto* cpu_action = std::get_if<CpuFramebufferAction>(&action)) {
 +                bool completed = false;
 +                try {
@@ -2091,19 +2237,19 @@ index 090cc42..188a1ba 100644
 +            operation.done.signal();
 +        } else {
 +            dispatch(action);
-@@ -398,0 +574,10 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
++        }
 +        if (config_update_pending && !renderer_context->cpu_framebuffer_pending()) {
 +            config_update_pending = false;
 +            dispatch(UpdateConfigAction{});
-+        }
-+    }
-+
+@@ -400,0 +597,6 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
 +    {
 +        std::lock_guard lock{gfx_action_shutdown_mutex};
 +        gfx_actions_open = false;
 +        cancel_pending_gfx_actions();
-@@ -445,0 +631,152 @@ static const OSViMode dummy_mode = []() {
-+ultramodern::state::VideoPause::VideoPause() {
++    }
++
+@@ -445,0 +648,153 @@ static const OSViMode dummy_mode = []() {
++ultramodern::state::VideoPause::VideoPause(bool keep_presenting) {
 +    std::unique_lock lock(video_pause_mutex);
 +    if (video_finished || !events_context.vi.thread.joinable() || exited.load()) {
 +        throw std::logic_error("VI owner is not running");
@@ -2111,6 +2257,7 @@ index 090cc42..188a1ba 100644
 +    if (video_pause_requested.exchange(true, std::memory_order_acq_rel)) {
 +        throw std::logic_error("Nested VI checkpoint");
 +    }
++    paused_presentation = keep_presenting;
 +    video_pause_changed.wait(lock, [] { return video_parked || video_finished; });
 +    if (video_finished) {
 +        video_pause_requested.store(false, std::memory_order_release);
@@ -2255,10 +2402,10 @@ index 090cc42..188a1ba 100644
 +    events_context.si.mq = saved.events[6]; events_context.si.msg = saved.events[7];
 +}
 +
-@@ -450 +787 @@ void set_dummy_vi(bool odd) {
+@@ -450 +805 @@ void set_dummy_vi(bool odd) {
 -    // Set up a dummy framebuffer.
 +
-@@ -559,0 +897,25 @@ extern "C" PTR(void) osViGetCurrentFramebuffer() {
+@@ -559,0 +915,25 @@ extern "C" PTR(void) osViGetCurrentFramebuffer() {
 +void ultramodern::renderer::wait_for_render_admission(uint8_t* rdram, uint32_t scratch, bool auxiliaryTask) {
 +    constexpr uint32_t bytes = sizeof(OSMesgQueue) + 2 * sizeof(OSMesg);
 +    static_assert(bytes <= 0x40);
@@ -2284,12 +2431,12 @@ index 090cc42..188a1ba 100644
 +        throw std::runtime_error("Renderer did not grant native producer ownership");
 +}
 +
-@@ -560,0 +923,4 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -560,0 +941,4 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 +    ultramodern::throw_if_exiting();
 +    const uint32_t address = uint32_t(task_);
 +    if (!rdram || (address & 7U) || address < 0x80000000U || address > 0x80800000U - sizeof(OSTask))
 +        throw std::invalid_argument("Invalid SP task input address");
-@@ -561,0 +928,9 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -561,0 +946,9 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 +    rsp::TaskLifecycle::Result started;
 +    {
 +        std::lock_guard lock(rsp_lifecycle_mutex);
@@ -2299,9 +2446,9 @@ index 090cc42..188a1ba 100644
 +        publish_rsp_result(started);
 +    }
 +    if (!started.dispatch) return;
-@@ -563 +937,0 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -563 +955,0 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 -    // Send gfx tasks to the graphics action queue
-@@ -565 +939,64 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -565 +957,65 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 -        events_context.action_queue.enqueue(SpTaskAction{ *task });
 +        const uint64_t submittedTimestampNs = static_cast<uint64_t>(
 +            std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -2354,8 +2501,8 @@ index 090cc42..188a1ba 100644
 +                events_callbacks.gfx_task_is_frame(rdram, uint32_t(task_)),
 +            events_callbacks.gfx_task_framebuffer == nullptr ? UINT32_MAX :
 +                events_callbacks.gfx_task_framebuffer(rdram, uint32_t(task_)),
-+            events_callbacks.gfx_task_cameras == nullptr ? ultramodern::renderer::CameraSamples{} :
-+                events_callbacks.gfx_task_cameras(rdram, uint32_t(task_)) };
++            events_callbacks.gfx_task_metadata == nullptr ? ultramodern::renderer::GraphicsTaskMetadata{} :
++                events_callbacks.gfx_task_metadata(rdram, uint32_t(task_)) };
 +        memcpy(action.data.data(), rdram + data_address, data_size);
 +        {
 +            std::lock_guard lock{gfx_action_shutdown_mutex};
@@ -2363,26 +2510,31 @@ index 090cc42..188a1ba 100644
 +            if (!gfx_actions_open) {
 +                throw ultramodern::thread_terminated{};
 +            }
++            observe_graphics(events::GraphicsTaskEvent::Submitted, started.token, uint32_t(task->t.data_ptr));
 +            if (!events_context.action_queue.enqueue(std::move(action)))
 +                throw std::runtime_error("Failed to enqueue native graphics task");
 +        }
 +
-@@ -567 +1004 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -567 +1023 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 -    // Set all other tasks as the RSP task
 +
-@@ -569 +1006,2 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+@@ -569 +1025,2 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 -        events_context.sp_task_queue.enqueue(task);
 +        if (!events_context.sp_task_queue.enqueue(RspTaskAction{*task, started.token}))
 +            throw std::runtime_error("Failed to enqueue SP task");
-@@ -580,0 +1019,4 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
+@@ -580,0 +1038,4 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
 +    {
 +        std::lock_guard lock{gfx_action_shutdown_mutex};
 +        gfx_actions_open = true;
 +    }
-@@ -584,2 +1025,0 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
+@@ -584,2 +1044,0 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
 -    // Wait for the two sp threads to be ready before continuing to prevent the game from
 -    // running before we're able to handle RSP tasks.
-@@ -624,2 +1064 @@ void ultramodern::join_event_threads() {
+@@ -612,0 +1072,3 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
++            case ultramodern::renderer::SetupResult::GraphicsInitializationFailed:
++                show_renderer_error("Renderer initialization failed. The game log contains the graphics operation and driver error." + driver_os_suffix);
++                break;
+@@ -624,2 +1086 @@ void ultramodern::join_event_threads() {
 -    // Send a null RSP task to indicate that the RSP task thread should exit.
 -    events_context.sp_task_queue.enqueue(nullptr);
 +    events_context.sp_task_queue.enqueue(std::nullopt);
@@ -2423,7 +2575,7 @@ index a170407..28292f4 100644
 -        // TODO: Should we check if the Rumble Pak is connected? Or just rumble regardless of the connected Pak?
 +
 diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
-index 961de3d..bd35a21 100644
+index 961de3d..db0b892 100644
 --- a/ultramodern/src/mesgqueue.cpp
 +++ b/ultramodern/src/mesgqueue.cpp
 @@ -1,0 +2,2 @@
@@ -2464,7 +2616,7 @@ index 961de3d..bd35a21 100644
 +        ).count());
 +}
 +
-@@ -18 +52,14 @@ void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool
+@@ -18 +52,29 @@ void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool
 -    external_messages.enqueue({mq, msg, jam, requeue_if_blocked});
 +    if (!external_messages.enqueue({
 +        mq, msg, jam, requeue_if_blocked,
@@ -2480,8 +2632,8 @@ index 961de3d..bd35a21 100644
 +        if (sequence) diagnostic_vi::emit(diagnostic_vi::Event::TrackingLost, sequence, uint32_t(mq));
 +        if (requeue_if_blocked) throw std::runtime_error("Unable to enqueue reliable external VI event");
 +    }
-@@ -21 +68,30 @@ void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool
--bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
++}
++
 +bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block,
 +    uint64_t externalEnqueueTimestampNs = 0,
 +    uint64_t externalDequeueTimestampNs = 0, uint64_t diagnosticVISequence = 0);
@@ -2495,8 +2647,8 @@ index 961de3d..bd35a21 100644
 +        }
 +        blocked_messages[blocked_message_count++] = message;
 +    }
-+}
-+
+@@ -21 +83,15 @@ void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool
+-bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
 +static void retry_blocked_messages(RDRAM_ARG PTR(OSMesgQueue) destination) {
 +    size_t retained = 0;
 +    for (size_t i = 0; i < blocked_message_count; ++i) {
@@ -2514,7 +2666,7 @@ index 961de3d..bd35a21 100644
 +}
 @@ -23,0 +100 @@ void dequeue_external_messages(RDRAM_ARG1) {
 +    ultramodern::throw_if_exiting();
-@@ -25,5 +102,3 @@ void dequeue_external_messages(RDRAM_ARG1) {
+@@ -25,5 +102,35 @@ void dequeue_external_messages(RDRAM_ARG1) {
 -    std::vector<QueuedMessage> requeued_messages{};
 -    while (external_messages.try_dequeue(to_send)) {
 -        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
@@ -2523,9 +2675,12 @@ index 961de3d..bd35a21 100644
 +    while (take_state_message(to_send) || external_messages.try_dequeue(to_send)) {
 +        ultramodern::throw_if_exiting();
 +        deliver_external_message(PASS_RDRAM to_send);
-@@ -31,2 +106,26 @@ void dequeue_external_messages(RDRAM_ARG1) {
--    for (QueuedMessage& cur_mesg : requeued_messages) {
--        external_messages.enqueue(cur_mesg);
++    }
++}
++
++void ultramodern::poll_pending_events(RDRAM_ARG1) {
++    dequeue_external_messages(PASS_RDRAM1);
++    check_running_queue(PASS_RDRAM1);
 +}
 +
 +std::vector<ultramodern::state::ExternalMessageState> ultramodern::state::capture_external_messages() {
@@ -2552,11 +2707,13 @@ index 961de3d..bd35a21 100644
 +    if (taken != queued_count || external_messages.size_approx() != 0) {
 +
 +        throw std::runtime_error("External-event producers were not stopped during capture");
-@@ -33,0 +133,67 @@ void dequeue_external_messages(RDRAM_ARG1) {
+@@ -31,2 +138,3 @@ void dequeue_external_messages(RDRAM_ARG1) {
+-    for (QueuedMessage& cur_mesg : requeued_messages) {
+-        external_messages.enqueue(cur_mesg);
 +    for (size_t i = 0; i < count; ++i) {
 +        const auto& message = state_message_prefix[i];
 +        saved[i] = {message.mq, message.mesg, message.jam, message.requeue_if_blocked};
-+    }
+@@ -33,0 +142,63 @@ void dequeue_external_messages(RDRAM_ARG1) {
 +    return saved;
 +}
 +
@@ -2620,20 +2777,20 @@ index 961de3d..bd35a21 100644
 +    state_message_prefix.swap(impl->messages);
 +    state_message_cursor = 0;
 +    impl->committed = true;
-@@ -36,0 +203 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+@@ -36,0 +208 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
 +    using namespace std::chrono_literals;
-@@ -38,3 +205,2 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+@@ -38,3 +210,2 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
 -    external_messages.wait_dequeue(to_send);
 -    if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
 -        external_messages.enqueue(to_send);
 +    while (!take_state_message(to_send) && !external_messages.wait_dequeue_timed(to_send, 10ms)) {
 +        ultramodern::throw_if_exiting();
-@@ -41,0 +208,2 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+@@ -41,0 +213,2 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
 +    ultramodern::throw_if_exiting();
 +    deliver_external_message(PASS_RDRAM to_send);
-@@ -44,0 +213 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
+@@ -44,0 +218 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
 +    ultramodern::throw_if_exiting();
-@@ -46,4 +215,3 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
+@@ -46,4 +220,3 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
 -    if (external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
 -        if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
 -            external_messages.enqueue(to_send);
@@ -2641,45 +2798,45 @@ index 961de3d..bd35a21 100644
 +    if (take_state_message(to_send) || external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
 +        ultramodern::throw_if_exiting();
 +        deliver_external_message(PASS_RDRAM to_send);
-@@ -50,0 +219 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
+@@ -50,0 +224 @@ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
 +    ultramodern::throw_if_exiting();
-@@ -54,0 +224 @@ extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) ms
+@@ -54,0 +229 @@ extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) ms
 +    ultramodern::diagnostic_vi::slots.resetQueue(uint32_t(mq_));
-@@ -60,0 +231 @@ extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) ms
+@@ -60,0 +236 @@ extern "C" void osCreateMesgQueue(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) ms
 +    retry_blocked_messages(PASS_RDRAM mq_);
-@@ -75 +246,4 @@ s32 MQ_IS_FULL(OSMesgQueue* mq) {
+@@ -75 +251,4 @@ s32 MQ_IS_FULL(OSMesgQueue* mq) {
 -bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 +bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block,
 +    uint64_t externalEnqueueTimestampNs,
 +    uint64_t externalDequeueTimestampNs, uint64_t diagnosticVISequence) {
 +    ultramodern::throw_if_exiting();
-@@ -78 +252 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -78 +257 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -        // If non-blocking, fail if the queue is full.
 +
-@@ -79,0 +254,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -79,0 +259,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 +            if (diagnosticVISequence) ultramodern::diagnostic_vi::emit(
 +                ultramodern::diagnostic_vi::Event::DeliveryBlocked, diagnosticVISequence, uint32_t(mq_));
-@@ -84 +260 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -84 +265 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -        // Otherwise, yield this thread until the queue has room.
 +
-@@ -91 +267 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -91 +272 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -    
 +
-@@ -93 +269 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -93 +274 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -        // Jams insert at the head of the message queue's buffer.
 +
-@@ -95,0 +272,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -95,0 +277,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 +        ultramodern::diagnostic_vi::slots.written(
 +            uint32_t(mq->msg) + uint32_t(mq->first) * sizeof(OSMesg), uint32_t(mq_), uint32_t(msg), diagnosticVISequence);
-@@ -99 +277 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -99 +282 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -        // Sends insert at the tail of the message queue's buffer.
 +
-@@ -101,0 +280,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -101,0 +285,2 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 +        ultramodern::diagnostic_vi::slots.written(
 +            uint32_t(mq->msg) + uint32_t(last) * sizeof(OSMesg), uint32_t(mq_), uint32_t(msg), diagnosticVISequence);
-@@ -105 +284,0 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -105 +289,0 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -    // If any threads were blocked on receiving from this message queue, pop the first one and schedule it.
-@@ -108 +287,19 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -108 +292,19 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -        ultramodern::schedule_running_thread(PASS_RDRAM ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue));
 +        PTR(OSThread) receiver_ =
 +            ultramodern::thread_queue_pop(PASS_RDRAM blocked_queue);
@@ -2700,74 +2857,74 @@ index 961de3d..bd35a21 100644
 +                static_cast<uint32_t>(msg);
 +        }
 +        ultramodern::schedule_running_thread(PASS_RDRAM receiver_);
-@@ -110 +307 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+@@ -110 +312 @@ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
 -    
 +
-@@ -114,0 +312 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -114,0 +317 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 +    ultramodern::throw_if_exiting();
-@@ -117 +315 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -117 +320 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 -        // If non-blocking, fail if the queue is empty
 +
-@@ -122 +320 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -122 +325 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 -        // Otherwise, yield this thread in a loop until the queue is no longer full
 +
-@@ -129,0 +328,6 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -129,0 +333,6 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 +    if (ultramodern::diagnostic_vi::callback.load(std::memory_order_relaxed)) {
 +        ultramodern::diagnostic_vi::slots.consumed(
 +            uint32_t(mq->msg) + uint32_t(mq->first) * sizeof(OSMesg), uint32_t(mq_),
 +            uint32_t(TO_PTR(OSMesg, mq->msg)[mq->first]), uint32_t(ultramodern::this_thread()));
 +    }
 +
-@@ -133 +337 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -133 +342 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 -    
 +
-@@ -135,0 +340 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -135,0 +345 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 +    retry_blocked_messages(PASS_RDRAM mq_);
-@@ -137 +341,0 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+@@ -137 +346,0 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
 -    // If any threads were blocked on sending to this message queue, pop the first one and schedule it.
-@@ -149,2 +353 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -149,2 +358 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
 +
-@@ -155,2 +358 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -155,2 +363 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Handle any messages that have been received from an external thread.
 +
-@@ -159 +360,0 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -159 +365,0 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    // Try to send the message.
-@@ -161,2 +362 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -161,2 +367 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Check the queue to see if this thread should swap execution to another.
 +
-@@ -171,2 +371 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -171,2 +376 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Don't directly send to the message queue if this isn't a game thread to avoid contention.
 +
-@@ -177,2 +376 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -177,2 +381 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Handle any messages that have been received from an external thread.
 +
-@@ -181 +378,0 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -181 +383,0 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    // Try to send the message.
-@@ -183,2 +380 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+@@ -183,2 +385 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 -    
 -    // Check the queue to see if this thread should swap execution to another.
 +
-@@ -192 +388 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
+@@ -192 +393 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
 -    
 +
-@@ -194,2 +390 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
+@@ -194,2 +395 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
 -    
 -    // Handle any messages that have been received from an external thread.
 +
-@@ -198 +392,0 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
+@@ -198 +397,0 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
 -    // Try to receive a message.
-@@ -200,2 +394 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
+@@ -200,2 +399 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
 -    
 -    // Check the queue to see if this thread should swap execution to another.
 +
 diff --git a/ultramodern/src/renderer_context.cpp b/ultramodern/src/renderer_context.cpp
-index a6af900..ab03c0f 100644
+index a6af900..3f05ab6 100644
 --- a/ultramodern/src/renderer_context.cpp
 +++ b/ultramodern/src/renderer_context.cpp
 @@ -13 +12,0 @@ void ultramodern::renderer::set_callbacks(const callbacks_t& callbacks) {
@@ -2776,10 +2933,15 @@ index a6af900..ab03c0f 100644
 -
 @@ -42,0 +41 @@ static ultramodern::renderer::GraphicsConfig graphic_config{};
 +static ultramodern::renderer::GraphicsConfig applied_graphic_config{};
-@@ -51 +50 @@ void ultramodern::renderer::set_graphics_config(const GraphicsConfig& config) {
+@@ -46,0 +46,2 @@ void ultramodern::renderer::set_graphics_config(const GraphicsConfig& config) {
++    const auto texture_serial = graphic_config.texture_request_serial +
++        (config.texture_option != graphic_config.texture_option);
+@@ -47,0 +49 @@ void ultramodern::renderer::set_graphics_config(const GraphicsConfig& config) {
++    graphic_config.texture_request_serial = texture_serial;
+@@ -51 +53 @@ void ultramodern::renderer::set_graphics_config(const GraphicsConfig& config) {
 -const ultramodern::renderer::GraphicsConfig& ultramodern::renderer::get_graphics_config() {
 +ultramodern::renderer::GraphicsConfig ultramodern::renderer::get_graphics_config() {
-@@ -54,0 +54,10 @@ const ultramodern::renderer::GraphicsConfig& ultramodern::renderer::get_graphics
+@@ -54,0 +57,10 @@ const ultramodern::renderer::GraphicsConfig& ultramodern::renderer::get_graphics
 +
 +ultramodern::renderer::GraphicsConfig ultramodern::renderer::get_applied_graphics_config() {
 +    std::lock_guard<std::mutex> lock(graphic_config_mutex);
@@ -2826,6 +2988,27 @@ index a22f747..b301bb9 100644
 -        // Wait until an external message arrives, then allow the next thread to run.
 +        ultramodern::threads::state_idle_checkpoint(rdram);
 +
+diff --git a/ultramodern/src/threadqueue.cpp b/ultramodern/src/threadqueue.cpp
+index f9c0fa1..492deb2 100644
+--- a/ultramodern/src/threadqueue.cpp
++++ b/ultramodern/src/threadqueue.cpp
+@@ -16 +16 @@ void ultramodern::thread_queue_insert(RDRAM_ARG PTR(PTR(OSThread)) queue_, PTR(O
+-    OSThread* toadd = TO_PTR(OSThread, toadd_); 
++    OSThread* toadd = TO_PTR(OSThread, toadd_);
+@@ -46,5 +46,5 @@ bool ultramodern::thread_queue_remove(RDRAM_ARG PTR(PTR(OSThread)) queue_, PTR(O
+-    PTR(PTR(OSThread)) cur = queue_;
+-    while (cur != NULLPTR) {
+-        PTR(OSThread)* cur_ptr = queue_to_ptr(PASS_RDRAM queue_);
+-        if (*cur_ptr == t_) {
+-            *cur_ptr = TO_PTR(OSThread, *cur_ptr)->next;
++    PTR(OSThread)* link = queue_to_ptr(PASS_RDRAM queue_);
++    while (*link != NULLPTR) {
++        OSThread* current = TO_PTR(OSThread, *link);
++        if (*link == t_) {
++            *link = current->next;
+@@ -53 +53 @@ bool ultramodern::thread_queue_remove(RDRAM_ARG PTR(PTR(OSThread)) queue_, PTR(O
+-        cur = TO_PTR(OSThread, *cur_ptr)->next;
++        link = &current->next;
 diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
 index 812c556..63d89d3 100644
 --- a/ultramodern/src/threads.cpp

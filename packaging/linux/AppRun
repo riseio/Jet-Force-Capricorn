@@ -13,7 +13,10 @@ if [ "$#" -eq 1 ]; then
 fi
 if [ -n "${APPIMAGE:-}" ]; then
     launch_dir=$(CDPATH= cd -- "$(dirname -- "$APPIMAGE")" && pwd -P) || exit 1
+else
+    launch_dir=$(CDPATH= cd -- "$APPDIR" && pwd -P) || exit 1
 fi
+export APP_FOLDER_PATH="${APP_FOLDER_PATH:-$launch_dir/data}"
 log_path="$launch_dir/JetForceCapricorn.log"
 if ! : >"$log_path"; then
     printf 'Cannot write launch log: %s\n' "$log_path" >&2
@@ -49,17 +52,25 @@ fi
         library_path="$library_path:$core"
         export GCONV_PATH="$core/gconv"
     fi
-    if ! probe_error=$(LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 \
-        "$loader" --library-path "$library_path" ./JetForceCapricorn 2>&1 >/dev/null) ||
-       [ -n "$probe_error" ]; then
-        library_path="$library_path:$APPDIR/usr/lib/compiler"
-    fi
-    if ! probe_error=$(LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 \
-        "$loader" --library-path "$library_path" ./JetForceCapricorn 2>&1 >/dev/null) ||
-       [ -n "$probe_error" ]; then
+    compatible=0
+    for extra in '' ":$APPDIR/usr/lib/compiler" \
+        ":$APPDIR/usr/lib/wayland" \
+        ":$APPDIR/usr/lib/wayland:$APPDIR/usr/lib/compiler"; do
+        candidate_path="$library_path$extra"
+        if probe_error=$(LD_PRELOAD= LD_AUDIT= LD_TRACE_LOADED_OBJECTS=1 LD_WARN=1 LD_BIND_NOW=1 \
+            "$loader" --library-path "$candidate_path" ./JetForceCapricorn 2>&1 >/dev/null) &&
+           [ -z "$probe_error" ]; then
+            library_path=$candidate_path
+            compatible=1
+            break
+        fi
+    done
+    if [ "$compatible" -ne 1 ]; then
         printf 'Packaged runtime cannot load the game: %s\n' "$probe_error" >&2
         exit 1
     fi
+    export JFC_AOT_LOADER="$loader"
+    export JFC_AOT_LIBRARY_PATH="$library_path:$APPDIR/usr/lib/compiler"
     exec "$loader" --library-path "$library_path" ./JetForceCapricorn "$@"
 ) >>"$log_path" 2>&1
 status=$?

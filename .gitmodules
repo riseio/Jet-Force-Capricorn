@@ -7,6 +7,3 @@
 [submodule "lib/rt64"]
 	path = lib/rt64
 	url = https://github.com/rt64/rt64
-[submodule "lib/jet-force-gemini"]
-	path = lib/jet-force-gemini
-	url = https://github.com/ryan-myers/jet-force-gemini

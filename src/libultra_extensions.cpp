@@ -1,7 +1,42 @@
+/*
+Copyright 2011 X-Scale. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY X-Scale ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+EVENT SHALL X-Scale OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The views and conclusions contained in the software and documentation are
+those of the authors and should not be interpreted as representing official
+policies, either expressed or implied, of X-Scale.
+
+The CIC challenge implementation in src/libultra_extensions.cpp adapts this
+algorithm. It implements a hardware protocol and contains no extracted game
+challenge/response pairs.
+Reference: https://github.com/mupen64plus/mupen64plus-core/blob/master/src/device/pif/n64_cic_nus_6105.c
+*/
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <stdexcept>
 
 #include "jfc_recomp.h"
+
 
 namespace {
 
@@ -16,26 +51,6 @@ std::array<uint8_t, pif_ram_size> pif_ram{};
 
 void return_no_pack(recomp_context* context) {
     context->r2 = pfs_no_pack;
-}
-
-uint32_t controller_address_crc(uint16_t address) {
-    uint32_t crc = 0;
-    for (uint32_t mask = 1U << 10; mask != 0; mask >>= 1) {
-        crc <<= 1;
-        if ((address & mask) != 0) {
-            crc = (crc & 0x20U) != 0 ? crc ^ 0x14U : crc + 1U;
-        }
-        else if ((crc & 0x20U) != 0) {
-            crc ^= 0x15U;
-        }
-    }
-    for (int bit = 0; bit < 5; bit++) {
-        crc <<= 1;
-        if ((crc & 0x20U) != 0) {
-            crc ^= 0x15U;
-        }
-    }
-    return crc & 0x1FU;
 }
 
 void process_cic_6105_challenge() {
@@ -111,12 +126,6 @@ extern "C" void __osSiRawStartDma_recomp(uint8_t* rdram, recomp_context* context
     ultramodern::send_si_message();
 }
 
-extern "C" void __osContAddressCrc_recomp(
-    uint8_t*, recomp_context* context
-) {
-    context->r2 = controller_address_crc(static_cast<uint16_t>(context->r4));
-}
-
 extern "C" void __osSpSetStatus_recomp(uint8_t*, recomp_context*) {}
 
 extern "C" void jfc_initialize_boot_environment(
@@ -127,6 +136,14 @@ extern "C" void jfc_initialize_boot_environment(
 
 extern "C" void jfc_boot_ram_test_6105(uint8_t*, recomp_context* context) {
     context->r2 = 1;
+}
+
+extern "C" void jfc_configure_native_heap(uint8_t* rdram, recomp_context*) {
+
+    if (MEM_W(0, 0x80000318U) != 8 * 1024 * 1024)
+        throw std::runtime_error("Native game heap requires 8 MiB RDRAM");
+    MEM_B(0, 0x800A33F0U) = 1;
+    std::fputs("JFC_GAME_HEAP mode=extended end=0x80600000 rdram_bytes=8388608\n", stderr);
 }
 
 extern "C" void osPfsIsPlug_recomp(uint8_t* rdram, recomp_context* context) {

@@ -17,4 +17,17 @@ struct BankTile {
 
 void visit_bank_tiles(std::span<const uint8_t> rom,
     const std::function<void(BankTile&&)>& consume);
+struct FontTile {
+    uint32_t font{}, glyph{};
+    uint64_t hash{};
+    Image image;
+    std::array<uint8_t,16> definition{};
+    std::span<const uint8_t> pixels;
+};
+
+void visit_font_tiles(std::span<const uint8_t> rom,
+    const std::function<void(FontTile&&)>& consume);
+
+void visit_number_tiles(std::span<const uint8_t> rom,
+    const std::function<void(BankTile&&, uint32_t cell_width)>& consume);
 }

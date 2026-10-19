@@ -148,4 +148,74 @@ void visit_bank_tiles(std::span<const uint8_t> rom,const std::function<void(Bank
         }
     }
 }
+
+void visit_number_tiles(std::span<const uint8_t> rom,
+    const std::function<void(BankTile&&, uint32_t)>& consume) {
+    if (rom.size()!=33554432 || XXH3_64bits(rom.data(),rom.size())!=0x44830C263C2DE108ULL)
+        throw std::runtime_error("Number textures require validated JFG US revision0 ROM");
+    constexpr size_t fs=0xB1880, table=0xB1754;
+    const size_t first=u32(rom,table+26*4), last=u32(rom,table+27*4);
+    if (first>last) throw std::runtime_error("Invalid frontend texture table");
+    const auto resources=extent(rom,fs+first,last-first);
+    const std::array<unsigned,2> sheets{u16(resources,8*2),u16(resources,9*2)};
+    unsigned found=0;
+    visit_bank_tiles(rom,[&](BankTile&& tile) {
+        if (tile.frame || tile.level) return;
+        for (unsigned resource : sheets) {
+            if (tile.bank!=((resource>>15)&1) || tile.index!=(resource&0x3FFF)) continue;
+            const unsigned width=tile.image.width/10;
+            if ((resource&0xC000)!=0xC000 || !width || width>16 ||
+                tile.image.height>16 || !tile.self_contained)
+                throw std::runtime_error("Unsupported native number sheet");
+            ++found;
+            consume(std::move(tile),width);
+            break;
+        }
+    });
+    if (found!=2) throw std::runtime_error("Missing native number sheet");
+}
+
+void visit_font_tiles(std::span<const uint8_t> rom,const std::function<void(FontTile&&)>& consume) {
+    if(rom.size()!=33554432 || XXH3_64bits(rom.data(),rom.size())!=0x44830C263C2DE108ULL)
+        throw std::runtime_error("Font textures require validated JFG US revision0 ROM");
+    constexpr size_t fs=0xB1880,table=0xB1754;
+    const auto asset=[&](unsigned index) {
+        const size_t first=u32(rom,table+index*4),last=u32(rom,table+(index+1)*4);
+        if(first>last) throw std::runtime_error("Invalid native font resource boundaries");
+        return extent(rom,fs+first,last-first);
+    };
+    const auto definitions=asset(58),glyphs=asset(59);
+    if(definitions.size()!=64) throw std::runtime_error("Invalid native font definition count");
+    for(unsigned font=0;font<4;++font) {
+        const auto definition=extent(definitions,font*16,16);
+        const unsigned width=definition[0],height=definition[1],type=u16(definition,10);
+        const size_t base=u32(definition,4),stride=u16(definition,8);
+        if(!width || width>16 || !height || height>16 || (type!=1 && type!=7) || stride<16)
+            throw std::runtime_error("Unsupported native font cell layout");
+        const auto cells=extent(glyphs,base,256*stride);
+        RT64::LoadTile tile{};
+        tile.fmt=type==7?G_IM_FMT_I:G_IM_FMT_IA;
+        tile.siz=type==7?G_IM_SIZ_4b:G_IM_SIZ_8b;
+        tile.line=uint16_t((((width<<tile.siz)>>1)+7)/8);
+        const size_t loaded=(((size_t(width)*height+(type==7?3:1))/(type==7?4:2)*2)+7)/8*8;
+        for(unsigned glyph=0;glyph<256;++glyph) {
+            const auto cell=extent(cells,glyph*stride,stride);
+            const size_t offset=u16(cell,0);
+            const auto pixels=extent(cell,offset,loaded);
+            if(cell[4]>cell[6] || cell[5]>cell[7] || cell[6]>width || cell[7]>height)
+                throw std::runtime_error("Native glyph bounds exceed its cell");
+            std::array<uint8_t,4096> tmem{},alternate;
+            alternate.fill(0xA7);
+            std::copy(pixels.begin(),pixels.end(),tmem.begin());
+            std::copy(pixels.begin(),pixels.end(),alternate.begin());
+            const auto hash=RT64::TMEMHasher::hash(tmem.data(),tile,uint16_t(width),uint16_t(height),0,6);
+            if(hash!=RT64::TMEMHasher::hash(alternate.data(),tile,uint16_t(width),uint16_t(height),0,6))
+                throw std::runtime_error("Native font cell depends on previous TMEM contents");
+            FontTile result{font,glyph,hash,decode_tmem(tmem,tile,width,height)};
+            std::copy(definition.begin(),definition.end(),result.definition.begin());
+            result.pixels=pixels;
+            consume(std::move(result));
+        }
+    }
+}
 }

@@ -1,9 +1,35 @@
 #pragma once
 
 #include <utility>
-#include "recompinput/input_types.h"
+#include <algorithm>
+#include "recompinput/recompinput.h"
 
 namespace jfc {
+
+using BindingAlternatives = std::array<recompinput::InputField, recompinput::num_bindings_per_input>;
+
+inline BindingAlternatives expand_held_bindings(const BindingAlternatives& triggers,
+                                               const BindingAlternatives& modifiers) {
+    BindingAlternatives result{};
+    size_t count = 0;
+    const auto append = [&](recompinput::InputField field) {
+        if (std::find(result.begin(), result.begin() + count, field) != result.begin() + count) return;
+        if (count == result.size()) throw std::invalid_argument("Too many combinations in legacy shortcut bindings");
+        result[count++] = field;
+    };
+    for (const auto& trigger : triggers) {
+        if (trigger.is_empty()) continue;
+        if (trigger.modifier_count()) { append(trigger); continue; }
+        for (const auto& modifier : modifiers) {
+            if (modifier.is_empty()) continue;
+            if (trigger == modifier) append(trigger);
+            else if (modifier.input_type == recompinput::InputType::MouseWheel)
+                append(modifier.holding(trigger));
+            else append(trigger.holding(modifier));
+        }
+    }
+    return result;
+}
 
 inline bool migrate_throwable_binding(recompinput::InputDevice device,
     recompinput::InputField& primary, recompinput::InputField& alternate) {

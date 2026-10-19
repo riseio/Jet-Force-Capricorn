@@ -1,4 +1,5 @@
 #include "texture_reconstruction.hpp"
+#include "texture_installation.hpp"
 #include "atomic_file.hpp"
 #include "texture_bank.hpp"
 #include "contrib/miniz/miniz.h"
@@ -320,7 +321,7 @@ void write_pack(std::span<const uint8_t> rom,FILE* file,const std::function<void
         throw std::runtime_error("Reconstruction requires the validated JFG US revision0 ROM");
     if(!file) throw std::runtime_error("Reconstruction requires an owned seekable output");
     if(shutdown.stop_requested()) throw PreparationCancelled{};
-    size_t total=0,unique=0;
+    size_t unique=0;
     mz_zip_archive zip{};
     if(!mz_zip_writer_init_cfile(&zip,file,MZ_ZIP_FLAG_WRITE_ZIP64))
         throw std::runtime_error("Cannot create reconstruction archive");
@@ -344,7 +345,6 @@ void write_pack(std::span<const uint8_t> rom,FILE* file,const std::function<void
 
     visit_bank_tiles(rom,[&](BankTile&& tile) {
         if(shutdown.stop_requested()) throw PreparationCancelled{};
-        ++total;
 
         if(!tile.self_contained) return;
         const auto content=XXH3_64bits(tile.image.rgba.data(),tile.image.rgba.size());
@@ -364,61 +364,75 @@ void write_pack(std::span<const uint8_t> rom,FILE* file,const std::function<void
             return make_dds(reconstruct_material(image));
         })});
         if(pending.size()==4) finish_one();
-        if(unique%512==0) {
-
-            if(progress) progress(total);
-        }
+        if(progress && unique%32==0) progress(unique);
     });
     while(!pending.empty()) finish_one();
+    if(progress) progress(unique);
     metadata+="]}";
     add("rt64.json",{reinterpret_cast<const uint8_t*>(metadata.data()),metadata.size()});
     if(!mz_zip_writer_finalize_archive(&zip)) throw std::runtime_error("Cannot finalize reconstruction archive");
 }
 
 std::filesystem::path prepare_pack(std::span<const uint8_t> rom,const std::filesystem::path& folder,
-    const std::function<void(size_t)>& progress,std::stop_token shutdown) {
+    const std::function<void(size_t)>& progress,std::stop_token shutdown,
+    const std::function<void(PreparationProgress)>& details) {
     if(rom.size()!=33554432 || XXH3_64bits(rom.data(),rom.size())!=0x44830C263C2DE108ULL)
         throw std::runtime_error("Reconstruction requires the validated JFG US revision0 ROM");
-    const auto path=folder/"cache"/"textures"/"coordinate-v7.rtz";
+    const auto path=pack_path(folder);
     if(shutdown.stop_requested()) throw PreparationCancelled{};
+    validate_pack_location(folder);
 
-    constexpr uint64_t expected_size=1970530095ULL,expected_hash=0x4cf50c0f03f077e8ULL;
+    constexpr uint64_t expected_size=pack_size,expected_hash=pack_hash;
     const auto digest=[&]() -> std::pair<uint64_t,uint64_t> {
         std::ifstream in(path,std::ios::binary|std::ios::ate);
         if(!in || in.tellg()<0 || uint64_t(in.tellg())>8ULL*1024*1024*1024) return {};
         const uint64_t size=uint64_t(in.tellg());in.seekg(0);
+        uint64_t checked=0;
+        if(details) details({PreparationStage::Checking,0,size});
         XXH3_state_t state;XXH3_64bits_reset(&state);
         std::array<char,65536> buffer;
         while(in.read(buffer.data(),buffer.size()) || in.gcount()) {
             if(shutdown.stop_requested()) throw PreparationCancelled{};
             XXH3_64bits_update(&state,buffer.data(),size_t(in.gcount()));
+            checked+=uint64_t(in.gcount());
+            if(details) details({PreparationStage::Checking,checked,size});
         }
         if(!in.eof()) return {};
         return {size,XXH3_64bits_digest(&state)};
     };
     if(digest()==std::pair{expected_size,expected_hash}) {
+        if(shutdown.stop_requested()) throw PreparationCancelled{};
+        record_pack_installation(folder);
 
         return path;
     }
 
     if(progress) progress(0);
+    if(details) details({PreparationStage::Preparing,0,0});
     uint64_t published_size=0,published_hash=0;
     const auto result=files::write_atomic_stream(path,8ULL*1024*1024*1024,[&](FILE* file) {
-        write_pack(rom,file,progress,shutdown);
+        write_pack(rom,file,[&](size_t count) {
+            if(progress) progress(count);
+            if(details) details({PreparationStage::Preparing,count,0});
+        },shutdown);
         if(std::fflush(file)!=0 || std::fseek(file,0,SEEK_SET)!=0)
             throw std::runtime_error("Cannot verify reconstruction archive before publication");
         XXH3_state_t state;XXH3_64bits_reset(&state);
         std::array<uint8_t,65536> bytes;
+        if(details) details({PreparationStage::Verifying,0,expected_size});
         while(const size_t count=std::fread(bytes.data(),1,bytes.size(),file)) {
             if(shutdown.stop_requested()) throw PreparationCancelled{};
             published_size+=count;XXH3_64bits_update(&state,bytes.data(),count);
+            if(details) details({PreparationStage::Verifying,published_size,expected_size});
         }
         if(std::ferror(file)) throw std::runtime_error("Cannot read completed reconstruction archive");
         published_hash=XXH3_64bits_digest(&state);
         if(published_size!=expected_size || published_hash!=expected_hash)
             throw std::runtime_error("Generated reconstruction archive does not match the verified release identity");
+        if(shutdown.stop_requested()) throw PreparationCancelled{};
     });
     if(!result.durable) std::fprintf(stderr,"JFC_TEXTURE_RECONSTRUCTION %s\n",result.warning.c_str());
+    record_pack_installation(folder);
 
     return path;
 }

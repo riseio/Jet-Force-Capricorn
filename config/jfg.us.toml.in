@@ -10,13 +10,15 @@ recomp_include = "#include \"jfc_recomp.h\""
 
 [patches]
 
+separate_context = ["objDrawTracer"]
+
 reimplemented = [
     "osPfsIsPlug", "osPfsInit", "osPfsChecker", "osPfsNumFiles",
     "__osPfsSelectBank", "__osContRamRead", "__osGetId",
     "__osPfsGetStatus", "__osContRamWrite", "__f_to_ll", "__ll_to_f",
     "__osSpSetStatus", "osDpSetStatus", "__ull_rshift", "__ll_lshift",
     "__osPiGetAccess", "__osPiRelAccess", "__osSiGetAccess",
-    "__osSiRelAccess", "__osSiRawStartDma", "__osContAddressCrc",
+    "__osSiRelAccess", "__osSiRawStartDma",
     "osUnmapTLBAll", "osYieldThread",
 ]
 
@@ -149,18 +151,42 @@ text = "{ const gpr saved_v0 = ctx->r2; osAiGetLength_recomp(rdram, ctx); ctx->r
 
 [[patches.hook]]
 func = "refractOutputAssembler"
+before_vram = 0x80075C40
+text = "jfc_refraction_capture capture = {0}; uint32_t capture_base = 0; uint32_t sample_address = 0;"
+
+[[patches.hook]]
+func = "refractOutputAssembler"
 before_vram = 0x80075CA4
-text = "jfc_cpu_effect_refraction(rdram, (uint32_t)ctx->r25, (uint32_t)ctx->r10);"
+text = "capture_base = (uint32_t)ctx->r25; capture = jfc_cpu_effect_refraction_begin(capture_base, (uint32_t)ctx->r10, (uint32_t)ctx->r1);"
+
+[[patches.hook]]
+func = "refractOutputAssembler"
+before_vram = 0x80075E6C
+text = "sample_address = (uint32_t)ctx->r4;"
+
+[[patches.hook]]
+func = "refractOutputAssembler"
+before_vram = 0x80075E70
+text = "if (capture.samples) { uint32_t index = ((uint32_t)ctx->r9 - capture_base) / 2; if (index >= capture.count) jfc_cpu_effect_refraction_bounds_error(); capture.samples[index] = (jfc_refraction_sample){sample_address, (uint16_t)ctx->r4, (uint16_t)ctx->r2}; }"
+
+[[patches.hook]]
+func = "refractOutputAssembler"
+before_vram = 0x80075EBC
+text = "sample_address = (uint32_t)ctx->r4 + 2;"
+
+[[patches.hook]]
+func = "refractOutputAssembler"
+before_vram = 0x80075EC0
+text = "if (capture.samples) { uint32_t index = ((uint32_t)ctx->r9 - capture_base) / 2 + 1; if (index >= capture.count) jfc_cpu_effect_refraction_bounds_error(); capture.samples[index] = (jfc_refraction_sample){sample_address, (uint16_t)ctx->r4, (uint16_t)ctx->r2}; }"
 
 [[patches.instruction]]
 func = "mainThread"
 vram = 0x80044BE0
 value = 0x0C011D63
 
-[[patches.hook]]
+[[patches.fallthrough]]
 func = "Cosf"
-before_vram = 0x80049C30
-text = "ctx->r4 = ADD32(ctx->r4, 0x4000); Sinf(rdram, ctx); return;"
+target = "Sinf"
 
 [[patches.hook]]
 func = "osBootRamTest1_6105"
@@ -265,6 +291,16 @@ text = "jfc_route_interaction_buttons(ctx);"
 [[patches.hook]]
 func = "sidekickpadControl"
 before_vram = 0x81600710
+text = "jfc_route_interaction_buttons(ctx);"
+
+[[patches.hook]]
+func = "robotPauseUpdate"
+before_vram = 0x81602E5C
+text = "jfc_route_interaction_buttons(ctx);"
+
+[[patches.hook]]
+func = "robotPauseUpdate"
+before_vram = 0x81602E78
 text = "jfc_route_interaction_buttons(ctx);"
 
 [[patches.hook]]
@@ -376,6 +412,36 @@ text = "jfc_prepare_modern_grounded_action_travel(rdram, ctx, (uint32_t)ctx->r16
 func = "dogControl"
 before_vram = 0x81100E54
 text = "jfc_prepare_modern_grounded_action_travel(rdram, ctx, (uint32_t)ctx->r16, MEM_W(ctx->r29, 0x34));"
+
+[[patches.hook]]
+func = "func_overlay_15_00F03740_1F170C0"
+before_vram = 0x80F0442C
+text = "jfc_begin_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16, MEM_W(0x68, ctx->r29));"
+
+[[patches.hook]]
+func = "func_overlay_15_00F03740_1F170C0"
+before_vram = 0x80F04434
+text = "jfc_end_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16);"
+
+[[patches.hook]]
+func = "func_overlay_16_01003464_1F2147C"
+before_vram = 0x81004154
+text = "jfc_begin_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16, MEM_W(0x68, ctx->r29));"
+
+[[patches.hook]]
+func = "func_overlay_16_01003464_1F2147C"
+before_vram = 0x8100415C
+text = "jfc_end_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16);"
+
+[[patches.hook]]
+func = "func_overlay_17_01103258_1F2ADA0"
+before_vram = 0x81104314
+text = "jfc_begin_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16, MEM_W(0x88, ctx->r29));"
+
+[[patches.hook]]
+func = "func_overlay_17_01103258_1F2ADA0"
+before_vram = 0x8110431C
+text = "jfc_end_modern_flight_steering(rdram, ctx, (uint32_t)ctx->r16);"
 
 [[patches.hook]]
 func = "func_overlay_15_00F03740_1F170C0"
@@ -553,6 +619,56 @@ before_vram = 0x8003B104
 text = "jfc_finalize_modern_manual_aim(rdram, ctx);"
 
 [[patches.hook]]
+func = "func_80015738"
+before_vram = 0x800158BC
+text = "float jfc_culling_tangent = jfc_culling_horizontal_tangent(rdram); uint32_t jfc_culling_apex_z = 0;"
+
+[[patches.hook]]
+func = "func_80015738"
+before_vram = 0x80015960
+text = "jfc_culling_apex_z = (uint32_t)ctx->r7;"
+
+[[patches.hook]]
+func = "func_80015738"
+before_vram = 0x80015984
+text = "if (ctx->r19 != 0) ctx->r5 = jfc_culling_vertex_x((uint32_t)ctx->r5, (uint32_t)ctx->r7, jfc_culling_apex_z, jfc_culling_tangent);"
+
+[[patches.hook]]
+func = "func_80015738"
+before_vram = 0x800159B0
+text = "if (ctx->r19 != 0) ctx->r5 = jfc_culling_vertex_x((uint32_t)ctx->r5, (uint32_t)ctx->r7, jfc_culling_apex_z, jfc_culling_tangent);"
+
+[[patches.hook]]
+func = "func_8002C078"
+before_vram = 0x8002C4B4
+text = "ctx->f6.fl = jfc_adjust_camera_fov(ctx->f6.fl);"
+
+[[patches.hook]]
+func = "func_8002CF78"
+before_vram = 0x8002D6A4
+text = "ctx->f8.fl = jfc_adjust_camera_fov(ctx->f8.fl);"
+
+[[patches.hook]]
+func = "func_8002C078"
+before_vram = 0x8002C678
+text = "jfc_adjust_camera_distance(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r29 + 0xC4U, 3);"
+
+[[patches.hook]]
+func = "func_8002CF78"
+before_vram = 0x8002DBE8
+text = "jfc_adjust_camera_distance(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r29 + 0x74U, 1);"
+
+[[patches.hook]]
+func = "func_8002CF78"
+before_vram = 0x8002DC34
+text = "uint32_t jfc_camera_world_radius = ctx->f0.u32l; ctx->f0.fl = jfc_camera_distance_units(rdram, (uint32_t)ctx->r16, ctx->f0.fl);"
+
+[[patches.hook]]
+func = "func_8002CF78"
+before_vram = 0x8002DD28
+text = "MEM_W(0xC0, ctx->r29) = jfc_camera_world_radius; ctx->f0.u32l = jfc_camera_world_radius; ctx->f14.fl = jfc_camera_distance_gain(rdram, (uint32_t)ctx->r16, ctx->f14.fl);"
+
+[[patches.hook]]
 func = "func_8002B378"
 before_vram = 0x8002B608
 text = "jfc_suppress_modern_level_camera(rdram, ctx);"
@@ -560,7 +676,132 @@ text = "jfc_suppress_modern_level_camera(rdram, ctx);"
 [[patches.hook]]
 func = "func_8002B378"
 before_vram = 0x8002B740
-text = "jfc_select_modern_attached_camera(rdram, ctx);"
+text = "if (camera_query) ctx->r3 = 0; else jfc_select_modern_attached_camera(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B418
+text = "const uint32_t camera_query = jfc_camera_query_active(ctx); if (camera_query) { ctx->r16 = ctx->r5; goto camera_query_start; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B468
+text = "camera_query_start:;"
+
+[[patches.hook]]
+func = "animseqCamera"
+before_vram = 0x800798A0
+text = "if (jfc_camera_query_active(ctx)) { ctx->r2 = ctx->r3; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B494
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B4D8
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B51C
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B560
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B59C
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B5C8
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B600
+text = "if (camera_query) goto camera_query_player;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B628
+text = "camera_query_player:;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B634
+text = "if (camera_query) ctx->r12 = 0x20;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B64C
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B684
+text = "if (camera_query) goto camera_query_modes;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B698
+text = "camera_query_modes:;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B6AC
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B6C8
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B70C
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B774
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B7B4
+text = "if (camera_query) { lobbycamInuse(rdram, ctx); goto camera_query_lobby; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B7C0
+text = "camera_query_lobby:;"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B7C8
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B7F0
+text = "if (camera_query) { ctx->r2 = 0; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B808
+text = "if (camera_query) { ctx->r2 = 1; return; }"
+
+[[patches.hook]]
+func = "func_8002B378"
+before_vram = 0x8002B814
+text = "if (camera_query) { ctx->r2 = 0; return; }"
 
 [[patches.hook]]
 func = "frontPlayerTarget"
@@ -583,9 +824,75 @@ before_vram = 0x8001BD84
 text = "jfc_adjust_fog(rdram, ctx);"
 
 [[patches.hook]]
+func = "frontDrawObj"
+before_vram = 0x8005A420
+text = "ctx->r6 = ctx->r3;"
+
+[[patches.hook]]
+func = "frontDrawObj"
+before_vram = 0x8005A0D0
+text = "jfc_ui_alpha_scope(rdram, 1);"
+
+[[patches.hook]]
+func = "frontDrawObj"
+
+before_vram = 0x8005A510
+text = "jfc_ui_alpha_scope(rdram, 0);"
+
+[[patches.hook]]
+func = "frontPrintNum"
+before_vram = 0x80058EF0
+text = "jfc_ui_alpha_scope(rdram, 1);"
+
+[[patches.hook]]
+func = "frontPrintNum"
+before_vram = 0x800595C8
+text = "jfc_ui_alpha_scope(rdram, 0);"
+
+[[patches.hook]]
+func = "camDo2DSprite"
+before_vram = 0x800416CC
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r4, 1);"
+
+[[patches.hook]]
+func = "camDo2DSprite"
+before_vram = 0x80041990
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r17, 0);"
+
+[[patches.hook]]
+func = "rcpTileWrite"
+before_vram = 0x8004EDBC
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r4, 1);"
+
+[[patches.hook]]
+func = "rcpTileWrite"
+before_vram = 0x8004EFFC
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r12, 0);"
+
+[[patches.hook]]
+func = "rcpTileWriteX"
+before_vram = 0x8004F02C
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r4, 1);"
+
+[[patches.hook]]
+func = "rcpTileWriteX"
+before_vram = 0x8004F6BC
+text = "jfc_ui_alpha_scope_at(rdram, (uint32_t)ctx->r25, 0);"
+
+[[patches.hook]]
 func = "camPushModelMtx"
 before_vram = 0x80041CA0
 text = "jfc_prepare_matrix_tag((uint32_t)ctx->r6);"
+
+[[patches.hook]]
+func = "mempool_slot_assign"
+before_vram = 0x8004AF28
+text = "jfc_record_allocation(rdram, (uint32_t)ctx->r8, (uint32_t)ctx->r6, (uint32_t)ctx->r7);"
+
+[[patches.hook]]
+func = "mempool_slot_clear"
+before_vram = 0x8004AD64
+text = "jfc_record_release(rdram, (uint32_t)ctx->r7);"
 
 [[patches.hook]]
 func = "camPushModelMtx"
@@ -874,9 +1181,170 @@ before_vram = 0x8004DA10
 text = "jfc_wait_render_admission(rdram, ctx);"
 
 [[patches.hook]]
+func = "objPrintCustomObject"
+before_vram = 0x8000AB44
+text = "jfc_set_tracer_owner((uint32_t)ctx->r20, 0);"
+
+[[patches.hook]]
+func = "objPrintCustomObject"
+before_vram = 0x8000AF54
+
+text = "jfc_set_tracer_owner((uint32_t)ctx->r20, 1U + (uint32_t)ctx->r18);"
+
+[[patches.hook]]
+func = "bloodSpurtsDraw"
+before_vram = 0x808016F4
+text = "jfc_set_tracer_owner((uint32_t)ctx->r17, 0);"
+
+[[patches.hook]]
+func = "trackUpdateTextureScroll"
+before_vram = 0x80013A9C
+text = "jfc_record_texture_scroll((uint32_t)ctx->r2, (uint32_t)ctx->r3, (uint32_t)ctx->r7 + 1U, (uint32_t)ctx->r8 + 1U, (int32_t)ctx->r5, (int32_t)ctx->r6);"
+
+[[patches.hook]]
+func = "objScrollTexture"
+before_vram = 0x8000E018
+text = "jfc_record_object_texture_scroll(rdram, ctx);"
+
+[[patches.hook]]
+func = "beamScroll"
+before_vram = 0x84C00DA8
+text = "jfc_record_texture_scroll((uint32_t)ctx->r8, 8, 65536, 1024, 0, (int32_t)ctx->r15); jfc_record_texture_scroll((uint32_t)ctx->r10, 8, 65536, 1024, 0, (int32_t)ctx->r15);"
+
+[[patches.hook]]
+func = "bloodSpurtAdd"
+before_vram = 0x80800648
+text = "jfc_record_effect_birth((uint32_t)ctx->r3, 0x54U);"
+
+[[patches.hook]]
+func = "sparkDraw"
+before_vram = 0x80A00A48
+text = "jfc_set_tracer_owner((uint32_t)ctx->r7, 0);"
+
+[[patches.hook]]
+func = "mizarEyeBeamDraw"
+before_vram = 0x8440D85C
+text = "jfc_set_tracer_owner((uint32_t)ctx->r17, 0);"
+
+[[patches.hook]]
+func = "realReflectPrint"
+before_vram = 0x88901184
+text = "jfc_set_tracer_owner((uint32_t)ctx->r21, 0);"
+
+[[patches.hook]]
 func = "objDrawTracer"
 before_vram = 0x8000A300
-text = "jfc_draw_world_tracer(rdram, ctx, camGetProjOrgMtx, texDPTextureX); return;"
+text = "if (!jfc_prepare_world_tracer(rdram, ctx)) return;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A32C
+text = "goto jfc_tracer_setup;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A30C
+text = "goto jfc_tracer_save;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A314
+text = "jfc_tracer_save:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A4C8
+text = "goto jfc_tracer_cursor;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A4CC
+text = "jfc_tracer_cursor:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A598
+text = "goto jfc_tracer_projection;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5A0
+text = "jfc_tracer_projection:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5D4
+text = "goto jfc_tracer_next_command;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5D8
+text = "jfc_tracer_next_command:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5DC
+text = "goto jfc_tracer_colour;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5E0
+text = "jfc_tracer_colour:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A4BC
+text = "jfc_tracer_setup:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A4D4
+text = "goto jfc_tracer_commands;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A580
+text = "jfc_tracer_commands:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5A8
+text = "jfc_validate_tracer_buffer((uint32_t)ctx->r2, 64, 8);"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5B4
+text = "ctx->r13 &= 0x1FFFFFFFU;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A5D0
+text = "jfc_validate_tracer_buffer((uint32_t)MEM_W(0x6C, ctx->r29), 64, 8);"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A640
+text = "ctx->r14 |= 0x8000U; ctx->r5 &= 0x1FFFFFFFU;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A66C
+text = "ctx->r14 &= 0x1FFFFFFFU;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A6D0
+text = "goto jfc_tracer_advance;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A748
+text = "jfc_tracer_advance:;"
+
+[[patches.hook]]
+func = "objDrawTracer"
+before_vram = 0x8000A74C
+text = "goto L_8000A9B8;"
 
 [[patches.hook]]
 func = "func_8000B3DC"
@@ -934,6 +1402,11 @@ before_vram = 0x80046048
 text = "jfc_request_cutscene_skip(rdram, ctx); if (jfc_prepare_quick_character_switch(rdram, ctx)) { ctx->r29 = ADD32(ctx->r29, -0x20); MEM_W(0x0, ctx->r29) = ctx->r4; MEM_W(0x4, ctx->r29) = ctx->r6; MEM_W(0x8, ctx->r29) = ctx->r8; MEM_W(0xC, ctx->r29) = ctx->r5; ctx->r4 = ctx->r29; ctx->r5 = ADD32(ctx->r29, 0x4); ctx->r6 = ADD32(ctx->r29, 0x8); mainValidateRestart(rdram, ctx); ctx->r4 = MEM_W(0x0, ctx->r29); ctx->r5 = MEM_W(0xC, ctx->r29); ctx->r6 = MEM_W(0x4, ctx->r29); ctx->r8 = MEM_W(0x8, ctx->r29); ctx->r7 = 0x10; jfc_commit_quick_character_switch(rdram, ctx); MEM_W(0x10, ctx->r29) = 1; MEM_W(0x14, ctx->r29) = 0; mainChangeLevel(rdram, ctx); ctx->r29 = ADD32(ctx->r29, 0x20); ctx->r2 = 0; }"
 
 [[patches.hook]]
+func = "frontCharSelect"
+before_vram = 0x83A006C0
+text = "jfc_request_travel_skip(rdram, ctx);"
+
+[[patches.hook]]
 func = "animseqUpdate"
 before_vram = 0x80077614
 text = "jfc_apply_cutscene_skip(rdram, ctx);"
@@ -954,9 +1427,13 @@ before_vram = 0x80077A98
 text = "jfc_finish_animseq_update(rdram, ctx);"
 
 [[patches.hook]]
+func = "mainChangeLevel"
+text = "jfc_log_level_request(rdram, ctx);"
+
+[[patches.hook]]
 func = "func_80046070"
 before_vram = 0x800474B4
-text = "jfc_observe_completed_level_load(rdram, ctx);"
+text = "jfc_observe_completed_level_load(rdram, ctx); jfc_autosave_completed_level_load(rdram, ctx, mainSaveGame2);"
 
 [[patches.hook]]
 func = "cutcameraControl"
@@ -1011,7 +1488,67 @@ text = "jfc_scale_pistol_recharge(ctx);"
 [[patches.hook]]
 func = "controlUpdateWeapon"
 before_vram = 0x80037550
-text = "jfc_begin_quick_grenade_input(rdram, ctx);"
+text = "jfc_begin_quick_grenade_input(rdram, ctx); const int jfc_shotgun = jfc_shotgun_upgrade_enabled();"
+
+[[patches.hook]]
+func = "controlUpdateWeapon"
+before_vram = 0x80037A98
+text = "if (jfc_shotgun && MEM_BU(0x47, ctx->r29) == 3) jfc_shotgun_press(rdram, ctx);"
+
+[[patches.hook]]
+func = "controlUpdateWeapon"
+before_vram = 0x80037D28
+text = "if (jfc_shotgun && MEM_BU(0x47, ctx->r29) == 3) jfc_shotgun_edge(rdram, ctx);"
+
+[[patches.hook]]
+func = "controlUpdateWeapon"
+before_vram = 0x80037E34
+text = "if (jfc_shotgun && MEM_BU(0x47, ctx->r29) == 3) ctx->r25 = 0;"
+
+[[patches.hook]]
+func = "controlUpdateWeapon"
+before_vram = 0x80037F64
+text = "if (jfc_shotgun && MEM_BU(0x47, ctx->r29) == 3) ctx->r14 = 0;"
+
+[[patches.hook]]
+func = "func_80038488"
+before_vram = 0x80038C90
+text = "if (jfc_shotgun_upgrade_enabled()) jfc_shotgun_charge(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_80038D54"
+before_vram = 0x80039038
+text = "if (jfc_shotgun_upgrade_enabled()) jfc_shotgun_spread(rdram, ctx, objSetupObject);"
+
+[[patches.hook]]
+func = "func_80038488"
+before_vram = 0x80038ED0
+text = "jfc_flame_debit(rdram, ctx);"
+
+[[patches.hook]]
+func = "flamethrowerHits"
+before_vram = 0x85F017D8
+text = "if (jfc_flamethrower_upgrade_enabled()) { jfc_flame_contact(rdram, ctx, SetSquaddieOnFire, TryToSetAnim); goto jfc_flame_contact_done; }"
+
+[[patches.hook]]
+func = "flamethrowerHits"
+before_vram = 0x85F017E0
+text = "jfc_flame_contact_done:;"
+
+[[patches.hook]]
+func = "SetSquaddieOnFire"
+before_vram = 0x8030D3A8
+text = "jfc_forget_weapon_object((uint32_t)ctx->r4);"
+
+[[patches.hook]]
+func = "SetSquaddieOnFire"
+before_vram = 0x8030D4E0
+text = "jfc_accepted_ignition((uint32_t)ctx->r16);"
+
+[[patches.hook]]
+func = "SquaddieControl"
+before_vram = 0x80310CE4
+text = "jfc_flame_damage(rdram, ctx);"
 
 [[patches.hook]]
 func = "controlUpdateWeapon"
@@ -1021,17 +1558,62 @@ text = "jfc_end_quick_grenade_input(rdram, ctx);"
 [[patches.hook]]
 func = "ammoPickupControl"
 before_vram = 0x84800678
-text = "jfc_scale_small_ammo_pickup(ctx);"
+text = "ctx->r4 = jfc_weapon_pickup_capacity((uint32_t)ctx->r4, (uint32_t)ctx->r16, (uint32_t)ctx->r11); jfc_scale_small_ammo_pickup(ctx);"
 
 [[patches.hook]]
 func = "ammoPickupControl"
 before_vram = 0x848006B8
-text = "jfc_scale_large_ammo_pickup(ctx);"
+text = "ctx->r4 = jfc_weapon_pickup_capacity((uint32_t)ctx->r4, (uint32_t)ctx->r16, (uint32_t)ctx->r25); jfc_scale_large_ammo_pickup(ctx);"
 
 [[patches.hook]]
 func = "severedLimbControl"
 before_vram = 0x80027CBC
-text = "jfc_scale_dropped_ammo_pickup(ctx);"
+text = "ctx->r4 = jfc_weapon_pickup_capacity((uint32_t)ctx->r4, (uint32_t)ctx->r6, (uint32_t)ctx->r15); jfc_scale_dropped_ammo_pickup(ctx);"
+
+[[patches.hook]]
+func = "shrinkbeamControl"
+before_vram = 0x81C0071C
+text = "jfc_shocker_range(rdram, ctx); jfc_shocker_pose(rdram, ctx, pointListRPY);"
+
+[[patches.hook]]
+func = "ammoPickupControl"
+before_vram = 0x8480072C
+text = "ctx->r24 = jfc_weapon_pickup_capacity((uint32_t)ctx->r24, (uint32_t)ctx->r16, MEM_HU(0x14, ctx->r3));"
+
+[[patches.hook]]
+func = "weaponPickupControl"
+before_vram = 0x88400698
+text = "ctx->r7 = jfc_weapon_pickup_capacity((uint32_t)ctx->r7, (uint32_t)ctx->r4, (uint32_t)ctx->r24);"
+
+[[patches.hook]]
+func = "severedLimbControl"
+before_vram = 0x80027AA0
+text = "ctx->r11 = jfc_weapon_capacity((uint32_t)ctx->r11, (uint32_t)ctx->r5);"
+
+[[patches.hook]]
+func = "severedLimbControl"
+before_vram = 0x80027AD8
+text = "ctx->r25 = jfc_weapon_capacity((uint32_t)ctx->r25, (uint32_t)ctx->r4);"
+
+[[patches.hook]]
+func = "severedLimbControl"
+before_vram = 0x80027B10
+text = "ctx->r14 = jfc_weapon_capacity((uint32_t)ctx->r14, (uint32_t)ctx->r7);"
+
+[[patches.hook]]
+func = "func_overlay_7_007017E8_1EFC910"
+before_vram = 0x80701E68
+text = "ctx->r14 = jfc_weapon_pickup_capacity((uint32_t)ctx->r14, (uint32_t)ctx->r3, MEM_HU(0x14, ctx->r2));"
+
+[[patches.hook]]
+func = "func_overlay_14_00E0292C_1F10284"
+before_vram = 0x80E03088
+text = "ctx->r4 = jfc_weapon_capacity((uint32_t)ctx->r4, (uint32_t)ctx->r24);"
+
+[[patches.hook]]
+func = "weaponScreen"
+before_vram = 0x81201CBC
+text = "ctx->r6 = jfc_weapon_capacity((uint32_t)ctx->r6, (uint32_t)MEM_W(0x34, ctx->r29) / 2);"
 
 [[patches.hook]]
 func = "weaponPickupControl"
@@ -1139,9 +1721,23 @@ before_vram = 0x81102D3C
 text = "ctx->f0.fl = jfc_sprint_speed_operand(rdram, (uint32_t)ctx->r16, ctx->f0.fl); ctx->f6.fl = jfc_sprint_speed_operand(rdram, (uint32_t)ctx->r16, ctx->f6.fl);"
 
 [[patches.hook]]
+func = "mainSetDefaultGame"
+text = "jfc_begin_default_game(rdram, ctx);"
+
+[[patches.hook]]
 func = "packLoadGameEprom"
 before_vram = 0x8004BC04
 text = "jfc_finish_game_load(rdram, ctx);"
+
+[[patches.hook]]
+func = "frontKeyboard"
+before_vram = 0x82A01610
+text = "jfc_copy_game_binding(rdram, (uint32_t)ctx->r3 - 0x538U, (uint32_t)ctx->r2);"
+
+[[patches.hook]]
+func = "frontKeyboard"
+before_vram = 0x82A02830
+text = "jfc_copy_game_binding(rdram, (uint32_t)ctx->r8 + (uint32_t)MEM_BU(0, ctx->r17) * 0x538U, (uint32_t)ctx->r16);"
 
 [[patches.hook]]
 func = "packSaveGameEprom"
@@ -1152,6 +1748,11 @@ text = "jfc_begin_game_save(rdram, ctx);"
 func = "packSaveGameEprom"
 before_vram = 0x8004BC98
 text = "jfc_finish_game_save(rdram, ctx);"
+
+[[patches.hook]]
+func = "packSaveGameEprom"
+before_vram = 0x8004BC9C
+text = "jfc_end_game_save(rdram, ctx);"
 
 [[patches.hook]]
 func = "packClearGameEprom"
@@ -1174,6 +1775,11 @@ before_vram = 0x8004823C
 text = "jfc_restore_persistent_tribals(rdram, ctx);"
 
 [[patches.hook]]
+func = "mainResetRegion"
+before_vram = 0x800487AC
+text = "jfc_restore_tribal_region(rdram);"
+
+[[patches.hook]]
 func = "mainSetTribalStatus"
 before_vram = 0x80048220
 text = "jfc_record_tribal_rescue(rdram, ctx);"
@@ -1182,6 +1788,54 @@ text = "jfc_record_tribal_rescue(rdram, ctx);"
 func = "SquaddieControl"
 before_vram = 0x80311904
 text = "jfc_protect_tribal_death(rdram, ctx);"
+
+[[patches.hook]]
+func = "SquaddieControl"
+before_vram = 0x80312534
+text = "jfc_preserve_corpse_fade(rdram, ctx, RemoveSquaddie);"
+
+[[patches.hook]]
+func = "SquaddieControl"
+before_vram = 0x80312554
+text = "jfc_begin_corpse_retirement(rdram, ctx);"
+
+[[patches.hook]]
+func = "SquaddieControl"
+before_vram = 0x8031255C
+text = "jfc_end_corpse_retirement();"
+
+[[patches.hook]]
+func = "squadsKillSquaddie"
+before_vram = 0x8030A404
+text = "if (jfc_corpse_reward_completed((uint32_t)ctx->r4)) goto L_8030A4F4;"
+
+[[patches.hook]]
+func = "RemoveSquaddie"
+before_vram = 0x80309E54
+text = "jfc_preserve_detached_squad_resources(rdram, ctx);"
+
+[[patches.hook]]
+func = "RemoveSquaddie"
+before_vram = 0x8030A0CC
+text = "if (jfc_retain_completed_corpse(rdram, ctx, TidyLinkedList, objEnsureNotTargetted, squadsTidyEventList)) goto jfc_corpse_remove_return;"
+
+[[patches.hook]]
+func = "RemoveSquaddie"
+before_vram = 0x8030A0D4
+text = "jfc_corpse_remove_return:;"
+
+[[patches.hook]]
+func = "objFreeObject"
+text = "jfc_forget_corpse((uint32_t)ctx->r4); jfc_forget_weapon_object((uint32_t)ctx->r4); jfc_shocker_free(rdram, ctx, objFreeObject);"
+
+[[patches.hook]]
+func = "SquaddieInitFromRomdef"
+text = "jfc_forget_corpse((uint32_t)ctx->r4); jfc_forget_weapon_object((uint32_t)ctx->r4);"
+
+[[patches.hook]]
+func = "func_80015D54"
+before_vram = 0x80015FB8
+text = "jfc_corpse_opacity(rdram, ctx);"
 
 [[patches.hook]]
 func = "SquaddieControl"
@@ -1229,6 +1883,15 @@ text = "if (jfc_should_protect_tribal_object(rdram, ctx->r4)) { return; }"
 func = "func_overlay_7_00700390_1EFB4B8"
 before_vram = 0x80700904
 text = "jfc_override_final_tribal_gate(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_overlay_7_00700B00_1EFBC28"
+text = "const uint32_t jfc_hint_index = (uint32_t)ctx->r4;"
+
+[[patches.hook]]
+func = "func_overlay_7_00700B00_1EFBC28"
+before_vram = 0x80700F5C
+text = "jfc_adapt_tribal_dialogue(rdram, (uint32_t)ctx->r16, (uint32_t)MEM_W(0x20, ctx->r29), jfc_hint_index, (uint32_t)MEM_W(0x2C, ctx->r29));"
 
 [[patches.hook]]
 func = "collectableControl"
@@ -1361,6 +2024,44 @@ before_vram = 0x8002F770
 text = "jfc_validate_companion_controller(rdram, ctx);"
 
 [[patches.hook]]
+func = "objPrintObject"
+text = "if (jfc_hide_companion(rdram, (uint32_t)ctx->r7)) return;"
+
+[[patches.hook]]
+func = "func_overlay_14_00E00220_1F0DB78"
+text = "if (jfc_hide_companion(rdram, (uint32_t)ctx->r4)) return;"
+
+[[patches.hook]]
+func = "shadowGenerate"
+before_vram = 0x8001DC3C
+text = "if (jfc_hide_companion(rdram, (uint32_t)ctx->r23)) ctx->r11 |= 0x400;"
+
+[[patches.hook]]
+func = "func_overlay_22_016022C4_1F3E94C"
+before_vram = 0x816026F8
+text = "ctx->r24 = jfc_robot_mission_allowance((int32_t)ctx->r24);"
+
+[[patches.hook]]
+func = "sidekickControl"
+before_vram = 0x8002FAD0
+text = "jfc_route_robot_pitch(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_8003109C"
+before_vram = 0x80031160
+text = "jfc_route_robot_target_pitch(rdram, ctx);"
+
+[[patches.instruction]]
+func = "robotDisplay"
+vram = 0x81601E6C
+value = 0x00000000
+
+[[patches.hook]]
+func = "robotDisplay"
+before_vram = 0x81601E6C
+text = "jfc_draw_robot_binding(rdram, ctx);"
+
+[[patches.hook]]
 func = "frontSingleInstruments"
 before_vram = 0x80E0104C
 text = "jfc_end_single_player_hud(rdram, ctx);"
@@ -1428,7 +2129,7 @@ text = "jfc_end_queued_pickup_text(rdram, ctx);"
 [[patches.hook]]
 func = "frontSingleInstruments"
 before_vram = 0x80E014AC
-text = "jfc_draw_room_counters(rdram, ctx); jfc_draw_grenade_counter(rdram, ctx); jfc_draw_weapon_shortcuts(rdram, ctx); jfc_end_single_player_hud(rdram, ctx);"
+text = "jfc_draw_room_counters(rdram, ctx); jfc_draw_grenade_counter(rdram, ctx); jfc_draw_weapon_shortcuts(rdram, ctx); jfc_draw_boss_health(rdram, ctx); jfc_end_single_player_hud(rdram, ctx);"
 
 [[patches.hook]]
 func = "objLoadObjList"
@@ -1440,7 +2141,7 @@ text = "jfc_invalidate_hud_metadata();"
 
 [[patches.hook]]
 func = "objFreeAll"
-text = "jfc_invalidate_hud_metadata();"
+text = "jfc_invalidate_hud_metadata(); jfc_weapon_world_reset();"
 
 [[patches.hook]]
 func = "squadsInitialiseBeforeObjects"
@@ -1455,8 +2156,22 @@ func = "fontInit"
 text = "jfc_invalidate_hud_metadata();"
 
 [[patches.hook]]
+func = "fontCreateDisplayList"
+before_vram = 0x800720EC
+text = "jfc_bound_font_tiles(rdram, (uint32_t)ctx->r6);"
+
+[[patches.hook]]
 func = "frontCleanupInstruments"
 text = "jfc_free_counter_icons(rdram, ctx);"
+
+[[patches.hook]]
+func = "modSuspendModelTextures"
+before_vram = 0x8003F368
+text = "jfc_preserve_frontend_model_textures(rdram, ctx);"
+
+[[patches.hook]]
+func = "mmInit"
+text = "jfc_configure_native_heap(rdram, ctx);"
 
 [[patches.hook]]
 func = "instDrawHealth"
@@ -1539,6 +2254,143 @@ before_vram = 0x83F00B78
 text = "jfc_end_transition_mask(rdram, (uint32_t)ctx->r19);"
 
 [[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007B3F4
+text = "ctx->r3 = jfc_boss_pistol_damage(rdram, (uint32_t)ctx->r18, (uint32_t)ctx->r20, (uint32_t)ctx->r17, (int32_t)ctx->r3);"
+
+[[patches.hook]]
+func = "BTSBFatBob"
+before_vram = 0x88F018E0
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r20, 21);"
+
+[[patches.hook]]
+func = "BTSBFatBob"
+before_vram = 0x88F019BC
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r20, 22);"
+
+[[patches.hook]]
+func = "BTSBFatBob"
+before_vram = 0x88F01A98
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r20, 20);"
+
+[[patches.hook]]
+func = "BTSBFatBob"
+before_vram = 0x88F01B0C
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r20, 18);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x89500630
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 5);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x895006AC
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 4);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x89500734
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 9);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x895007E8
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 3);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x89500850
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 1);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x895008B8
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 2);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+before_vram = 0x89500920
+text = "jfc_boss_part_completed(rdram, (uint32_t)ctx->r16, 0);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x84302400
+text = "jfc_boss_mantis_weapon_completed(rdram, (uint32_t)ctx->r17, 2);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x84302464
+text = "jfc_boss_mantis_weapon_completed(rdram, (uint32_t)ctx->r17, 3);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x843024C8
+text = "jfc_boss_mantis_weapon_completed(rdram, (uint32_t)ctx->r17, 5);"
+
+[[patches.hook]]
+func = "mizarControl"
+before_vram = 0x844031D4
+text = "jfc_boss_mizar_damage(rdram, (uint32_t)ctx->r21, (uint32_t)ctx->r17, (int32_t)ctx->r5);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x84301470
+text = "ctx->r4 = jfc_mantis_group_status(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r3, (uint32_t)ctx->r4);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x8430152C
+text = "ctx->r2 = jfc_mantis_group_status(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r6, (uint32_t)ctx->r2);"
+
+[[patches.hook]]
+func = "objPrintModelObject"
+before_vram = 0x8000DB80
+text = "jfc_draw_boss_weak_points(rdram, ctx, (uint32_t)ctx->r17);"
+
+[[patches.hook]]
+func = "BTSBFatBob"
+text = "jfc_initialize_boss_parts(rdram, (uint32_t)ctx->r4, 0);"
+
+[[patches.hook]]
+func = "BTSBSlugBoss"
+text = "jfc_initialize_boss_parts(rdram, (uint32_t)ctx->r4, 1);"
+
+[[patches.hook]]
+func = "mantisInit"
+before_vram = 0x843012B8
+text = "ctx->r5 = jfc_boss_initial_health((int32_t)ctx->r5);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x8430241C
+text = "ctx->r11 = jfc_boss_initial_health((int32_t)ctx->r11);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x84302480
+text = "ctx->r15 = jfc_boss_initial_health((int32_t)ctx->r15);"
+
+[[patches.hook]]
+func = "mantisControl"
+before_vram = 0x843024E4
+text = "ctx->r12 = jfc_boss_initial_health((int32_t)ctx->r12);"
+
+[[patches.hook]]
+func = "mizarInit"
+before_vram = 0x84401FC8
+text = "jfc_initialize_mizar_health(rdram);"
+
+[[patches.hook]]
+func = "hitPlayerAimCheck"
+text = "jfc_begin_boss_target(rdram, (uint32_t)ctx->r4);"
+
+[[patches.hook]]
+func = "hitPlayerAimCheck"
+before_vram = 0x8007BE4C
+text = "jfc_observe_boss_target(rdram, ctx);"
+
+[[patches.hook]]
 func = "frontInitStartScreen"
 before_vram = 0x83F004C0
 text = "jfc_install_title_logo(rdram);"
@@ -1572,3 +2424,37 @@ text = "jfc_begin_starfield_batch(rdram, ctx);"
 func = "starfieldDrawSP"
 before_vram = 0x80500AE8
 text = "jfc_end_starfield_batch(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_800394A4"
+before_vram = 0x80039774
+text = "jfc_shocker_created(rdram, ctx);"
+
+[[patches.hook]]
+func = "hitUpdate"
+text = "jfc_shocker_hits_begin(rdram, ctx, hitsCheckLineOfSight, pointListRPY);"
+
+[[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007AB58
+text = "jfc_shocker_hits_order(rdram, ctx);"
+
+[[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007AD70
+text = "if (jfc_shocker_query(rdram, ctx, hitVectorCheck)) goto jfc_shocker_query_done;"
+
+[[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007AD78
+text = "jfc_shocker_query_done:;"
+
+[[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007B43C
+text = "jfc_shocker_hit(rdram, ctx);"
+
+[[patches.hook]]
+func = "hitUpdate"
+before_vram = 0x8007B950
+text = "jfc_shocker_hits_end(rdram, ctx, hitsCheckLineOfSight, objSetupObject);"

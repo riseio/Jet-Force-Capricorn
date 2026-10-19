@@ -1,19 +1,24 @@
 #include "save_state_rendezvous.hpp"
+#include "audio_output.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "ultramodern/ultramodern.hpp"
+#include "ultramodern/state.hpp"
 
 namespace jfc::state {
 namespace {
 std::atomic<Action> requested{Action::None};
 std::atomic_bool ready_for_request{true};
+std::atomic_bool pause_released{false};
+std::promise<void> pause_completion;
 Transaction* transaction_callback = nullptr;
 Completion* completion_callback = nullptr;
 Roots roots{};
@@ -36,7 +41,7 @@ constexpr uint32_t audio_bit = 2;
 constexpr uint32_t rdram_size = 8U * 1024 * 1024;
 
 void complete() noexcept {
-    if (completion_callback) completion_callback(completed_action,
+    if (completed_action != Action::Pause && completion_callback) completion_callback(completed_action,
         completion_error.empty() ? nullptr : completion_error.c_str());
     completed_action = Action::None;
     completion_error.clear();
@@ -115,6 +120,24 @@ bool request(Action action) {
     return true;
 }
 
+std::future<void> request_pause() {
+    if (!ultramodern::is_game_initialized())
+        throw std::runtime_error("Wait for the game to finish loading before installing textures.");
+    std::promise<void> completion;
+    auto result = completion.get_future();
+    bool expected = true;
+    if (!ready_for_request.compare_exchange_strong(expected, false, std::memory_order_acq_rel))
+        throw std::runtime_error("A save or restore is in progress. Try again after it finishes.");
+    pause_completion = std::move(completion);
+    pause_released.store(false, std::memory_order_relaxed);
+    requested.store(Action::Pause, std::memory_order_release);
+    return result;
+}
+
+void release_pause() noexcept {
+    pause_released.store(true, std::memory_order_release);
+}
+
 void idle_checkpoint(uint8_t* rdram) {
     const Action action = requested.load(std::memory_order_acquire);
     if (action == Action::None || (parked == 0 && boundary_error == nullptr)) return;
@@ -123,14 +146,22 @@ void idle_checkpoint(uint8_t* rdram) {
         error = boundary_error;
     } else if (parked == all_roots) {
         try {
-            roots_staged = false;
-            staged_enhancements.reset();
-            staged_modernization.reset();
-            transaction_callback(action, rdram, roots);
-            if (action == Action::Restore && (!roots_staged || !staged_enhancements || !staged_modernization)) {
-                throw std::logic_error("Restore transaction did not preflight native roots and game sidecars");
+            if (action == Action::Pause) {
+                ultramodern::state::VideoPause video_pause(true);
+                ultramodern::state::TimerPause timer_pause;
+                pause_completion.set_value();
+                while (!pause_released.load(std::memory_order_acquire) && !ultramodern::shutdown_token().stop_requested())
+                    ultramodern::sleep_milliseconds(10);
+            } else {
+                roots_staged = false;
+                staged_enhancements.reset();
+                staged_modernization.reset();
+                transaction_callback(action, rdram, roots);
+                if (action == Action::Restore && (!roots_staged || !staged_enhancements || !staged_modernization)) {
+                    throw std::logic_error("Restore transaction did not preflight native roots and game sidecars");
+                }
+                restore_pending = action == Action::Restore;
             }
-            restore_pending = action == Action::Restore;
         } catch (const std::exception& failure) {
             error = failure.what();
         }
@@ -141,6 +172,8 @@ void idle_checkpoint(uint8_t* rdram) {
     }
     completed_action = action;
     completion_error = std::move(error);
+    if (action == Action::Pause && !completion_error.empty())
+        pause_completion.set_exception(std::make_exception_ptr(std::runtime_error(completion_error)));
     boundary_error = nullptr;
     release(rdram);
 }
@@ -150,7 +183,7 @@ extern "C" uint32_t jfc_state_requested() {
     return jfc::state::requested.load(std::memory_order_acquire) != jfc::state::Action::None;
 }
 
-extern "C" void jfc_state_root(uint8_t* rdram, recomp_context* ctx, uint32_t root, uint64_t* locals) {
+extern "C" void jfc_state_root(uint8_t* rdram, recomp_context* ctx, uint32_t root, uint64_t* locals) noexcept(false) {
     using namespace jfc::state;
     if (root >= roots.size() || !jfc_state_requested() || boundary_error != nullptr) return;
     const uint32_t bit = 1U << root;
@@ -165,15 +198,17 @@ extern "C" void jfc_state_root(uint8_t* rdram, recomp_context* ctx, uint32_t roo
         boundary_error = "Unexpected thread at save-state root";
         return;
     }
-    if (root == uint32_t(Root::Game)) {
-        try {
+    std::optional<AudioPlaybackPause> playback_pause;
+    try {
+        playback_pause.emplace();
+        if (root == uint32_t(Root::Game) && requested.load(std::memory_order_acquire) != Action::Pause) {
             game_state.enhancements = capture_enhancements();
             game_state.modernization = capture_modernization();
-        } catch (const std::exception& failure) {
-            owner_capture_error = failure.what();
-            boundary_error = owner_capture_error.c_str();
-            return;
         }
+    } catch (const std::exception& failure) {
+        owner_capture_error = failure.what();
+        boundary_error = owner_capture_error.c_str();
+        return;
     }
     if (parked == 0) {
         deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -192,5 +227,6 @@ extern "C" void jfc_state_root(uint8_t* rdram, recomp_context* ctx, uint32_t roo
         set_cop1_cs(staged_roots[root].cop1);
     }
     parked &= ~bit;
+    playback_pause.reset();
     if (parked == 0) complete();
 }

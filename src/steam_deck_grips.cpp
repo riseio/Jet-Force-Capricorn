@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <string>
 
@@ -27,6 +28,7 @@ std::array<int, jfc::deck_grips::raw_reader_capacity> raw_fds = [] {
 std::array<std::string, jfc::deck_grips::raw_reader_capacity> raw_paths{};
 bool evdev_select_held = false;
 bool evdev_l4_held = false;
+bool evdev_r4_held = false;
 bool evdev_l5_held = false, evdev_r5_held = false;
 bool evdev_lower_available = false;
 std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_l4_held{};
@@ -34,6 +36,7 @@ std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_r4_held{};
 std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_select_held{};
 std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_l5_held{};
 std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_r5_held{};
+std::array<bool, jfc::deck_grips::raw_reader_capacity> raw_valid{};
 auto next_scan = std::chrono::steady_clock::time_point{};
 bool unavailable_reported = false;
 bool raw_reported = false;
@@ -58,6 +61,7 @@ void close_raw(size_t index) {
     close_input(raw_fds[index]);
     raw_paths[index].clear();
     raw_l4_held[index] = false;
+    raw_valid[index] = false;
     raw_r4_held[index] = false;
     raw_select_held[index] = false;
     raw_l5_held[index] = false;
@@ -150,10 +154,42 @@ void open_deck() {
 }
 #endif
 
-jfc::deck_grips::Edges jfc::deck_grips::poll() {
+jfc::deck_grips::Edges jfc::deck_grips::poll(SnapshotConsumer consume) {
 #ifdef __linux__
     open_deck();
     Edges result{};
+    const auto raw_owner = [] {
+        for (size_t i = 0; i < raw_valid.size(); ++i) if (raw_valid[i]) return i;
+        return raw_valid.size();
+    };
+    const auto snapshot = [&] {
+        Edges value{};
+        const auto owner = raw_owner();
+        if (owner < raw_valid.size()) {
+            value.upper_available = value.lower_available = true;
+            value.l4_held = raw_l4_held[owner]; value.r4_held = raw_r4_held[owner];
+            value.l5_held = raw_l5_held[owner]; value.r5_held = raw_r5_held[owner];
+            value.select_held = raw_select_held[owner];
+        } else {
+            value.upper_available = event_fd >= 0;
+            value.lower_available = event_fd >= 0 && evdev_lower_available;
+            value.l4_held = evdev_l4_held; value.r4_held = evdev_r4_held;
+            value.l5_held = evdev_l5_held; value.r5_held = evdev_r5_held;
+            value.select_held = evdev_select_held;
+        }
+        return value;
+    };
+    static size_t published_source = raw_reader_capacity + 1;
+    const auto publish = [&] {
+        const auto raw = raw_owner();
+        const auto source = raw < raw_reader_capacity ? raw :
+            event_fd >= 0 ? raw_reader_capacity : raw_reader_capacity + 1;
+        if (source != published_source) {
+            if (consume) consume({});
+            published_source = source;
+        }
+        if (consume) consume(snapshot());
+    };
     if (event_fd >= 0) {
         input_event event{};
         for (;;) {
@@ -161,6 +197,8 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
             if (size == sizeof(event)) {
                 if (event.type == EV_KEY && event.code == jfc::deck_grips::btn_gripl)
                     evdev_l4_held = event.value != 0;
+                if (event.type == EV_KEY && event.code == jfc::deck_grips::btn_gripr)
+                    evdev_r4_held = event.value != 0;
                 if (event.type == EV_KEY &&
                         event.code == jfc::deck_grips::btn_select) {
                     evdev_select_held = event.value != 0;
@@ -175,6 +213,7 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
                 result.select = result.select || edges.select;
                 result.l5 = result.l5 || edges.l5;
                 result.r5 = result.r5 || edges.r5;
+                if (raw_owner() == raw_valid.size() && event.type == EV_KEY) publish();
                 continue;
             }
             if (size < 0 && errno == EINTR) continue;
@@ -183,7 +222,9 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
                 close_input(event_fd);
                 evdev_select_held = false;
                 evdev_l4_held = false;
+                evdev_r4_held = false;
                 evdev_l5_held = evdev_r5_held = evdev_lower_available = false;
+                publish();
             }
             break;
         }
@@ -197,6 +238,7 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
             const ssize_t size = read(
                 raw_fds[index], report.data(), report.size());
             if (size > 0) {
+                if (is_deck_report(report.data(), static_cast<size_t>(size))) raw_valid[index] = true;
                 if (is_deck_report(report.data(), static_cast<size_t>(size)) &&
                         !raw_reported) {
                     raw_reported = true;
@@ -211,6 +253,7 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
                 result.select = result.select || edges.select;
                 result.l5 = result.l5 || edges.l5;
                 result.r5 = result.r5 || edges.r5;
+                if (raw_valid[index] && raw_owner() == index) publish();
                 continue;
             }
             if (size < 0 && errno == EINTR) continue;
@@ -221,24 +264,18 @@ jfc::deck_grips::Edges jfc::deck_grips::poll() {
                     raw_paths[index].c_str(),
                     errno);
                 close_raw(index);
+                publish();
             }
             break;
         }
     }
-    result.select_held = evdev_select_held;
-    result.upper_available = event_fd >= 0 || raw_reported;
-    result.l4_held = evdev_l4_held;
-    for (bool held : raw_l4_held) result.l4_held = result.l4_held || held;
-    result.lower_available = (event_fd >= 0 && evdev_lower_available) || raw_reported;
-    result.l5_held = evdev_l5_held;
-    result.r5_held = evdev_r5_held;
-    for (bool held : raw_select_held) {
-        result.select_held = result.select_held || held;
-    }
-    for (bool held : raw_l5_held) result.l5_held = result.l5_held || held;
-    for (bool held : raw_r5_held) result.r5_held = result.r5_held || held;
-    return result;
+    auto final = snapshot();
+    final.l4 = result.l4; final.r4 = result.r4; final.select = result.select;
+    final.l5 = result.l5; final.r5 = result.r5;
+    publish();
+    return final;
 #else
+    if (consume) consume({});
     return {};
 #endif
 }

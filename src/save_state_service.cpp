@@ -3,6 +3,7 @@
 #include "save_state_memory.hpp"
 #include "save_state_overlays.hpp"
 #include "audio_output.hpp"
+#include "jfc_modernization.hpp"
 #include "librecomp/state.hpp"
 #include "ultramodern/renderer_context.hpp"
 #include "ultramodern/ultramodern.hpp"
@@ -162,6 +163,7 @@ void transaction(Action action, uint8_t* rdram, const Roots& roots) {
             std::memcpy(t.rdram, saved_memory.data(), saved_memory.size());
             overlays.commit(); messages.commit(); runtime::restore_video(events.video);
             t.media.commit(); t.audio.commit(); t.timer.commit(); renderer->commit();
+            ultramodern::set_audio_activity(jfc::modernization::audio_activity(t.rdram));
 
         }, opaque);
     }, &t);

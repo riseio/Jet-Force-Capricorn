@@ -3,8 +3,10 @@
 #include <filesystem>
 #include <cstdint>
 #include <array>
+namespace ultramodern { enum class AudioActivity; }
 
 namespace jfc::modernization {
+ultramodern::AudioActivity audio_activity(uint8_t* rdram);
 
 enum class FinalTribalRequirement {
     Original = 100,
@@ -27,6 +29,8 @@ enum class ShipPartScanner {
 };
 
 bool initialize_save_metadata(const std::filesystem::path& directory);
+void flush_save_metadata();
+void set_save_metadata_error_reporter(void (*report)(const char*));
 
 using SettingsOpenRequest = void (*)();
 void set_settings_open_request(SettingsOpenRequest request);
@@ -42,9 +46,12 @@ void set_double_ammo_pickups(bool enabled);
 void set_unlimited_lives(bool enabled);
 void set_mission_complete_refill(bool enabled);
 void set_double_enemy_drops(bool enabled);
+void set_double_robot_mission_time(bool enabled);
+void set_hide_companion(bool enabled);
 void set_fast_throws(bool enabled);
 void set_halo_health(bool enabled);
 void set_persistent_dropped_pickups(bool enabled);
+void set_persistent_corpses(bool enabled);
 void set_ship_part_scanner(ShipPartScanner mode);
 void set_guidance_text(bool enabled);
 void sample_actions(bool sprint, bool quick_switch);

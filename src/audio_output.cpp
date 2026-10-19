@@ -11,6 +11,10 @@
 #include <atomic>
 #include <cstdio>
 #include <array>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <thread>
 
 namespace {
 SDL_AudioDeviceID audio_device = 0;
@@ -18,53 +22,175 @@ std::unique_ptr<jfc::audio::StateStream> audio_stream;
 uint32_t audio_input_frequency = 32000, audio_output_frequency = 0;
 uint32_t audio_callback_frames = 0;
 bool audio_started = false;
+uint32_t audio_playback_pauses = 0;
 
 uint64_t audio_profile_stream = 0, audio_profile_callback = 0;
 std::mutex audio_mutex;
 jfc::audio::OutputQueue audio_output;
 std::atomic_bool state_audio_paused = false;
+std::mutex audio_phase_mutex;
+RT64::AudioProfile::Phase audio_activity = RT64::AudioProfile::Phase::Startup;
+bool audio_profile_active = false, audio_transaction_paused = false;
+std::mutex devices_mutex, device_wake_mutex, device_lifecycle_mutex;
+std::condition_variable device_wake;
+jfc::audio::OutputDevices devices;
+std::atomic<uint64_t> devices_revision{1};
+std::atomic_bool reopen_device{false}, test_pending{false};
+std::atomic<int> test_volume{100};
+std::jthread device_worker;
+uint32_t test_frames = 0;
+
+void publish_devices_locked() {
+    devices.revision = devices_revision.fetch_add(1, std::memory_order_release) + 1;
+}
+
+int SDLCALL watch_audio(void*, SDL_Event* event) {
+    if ((event->type == SDL_AUDIODEVICEADDED && !event->adevice.iscapture) ||
+        (event->type == SDL_AUDIODEVICEREMOVED && !event->adevice.iscapture) ||
+        event->type == SDL_APP_DIDENTERFOREGROUND) {
+        reopen_device.store(true, std::memory_order_release);
+        device_wake.notify_one();
+    }
+    return 1;
+}
+
+struct OpenOutput { SDL_AudioDeviceID device = 0; uint32_t frames = 0; };
+OpenOutput open_output() {
+    std::vector<std::string> names;
+    for (int i = 0, count = SDL_GetNumAudioDevices(0); i < count; ++i)
+        if (const char* name = SDL_GetAudioDeviceName(i, 0))
+            if (std::find(names.begin(), names.end(), name) == names.end()) names.emplace_back(name);
+    std::string selected;
+    { std::lock_guard lock(devices_mutex); selected = devices.selected; }
+    SDL_AudioSpec desired{}, obtained{};
+    desired.freq = 48000; desired.format = AUDIO_S16SYS; desired.channels = 2; desired.samples = 512;
+    desired.callback = [](void*, Uint8* data, int bytes) {
+        const bool profiling = RT64::PerformanceProfiler::enabled();
+        const uint64_t callback = profiling ? ++audio_profile_callback : 0;
+        const uint64_t missing_before = profiling ? audio_output.underruns() : 0;
+        if (profiling) RT64::AudioProfile::callbackBegin(audio_profile_stream,
+            callback, size_t(bytes) / (2 * sizeof(int16_t)), audio_output.size() / 2);
+        auto pcm = std::span(reinterpret_cast<int16_t*>(data), size_t(bytes) / sizeof(int16_t));
+        audio_output.consume(pcm);
+        if (test_frames) {
+            const int volume = test_volume.load(std::memory_order_relaxed);
+            for (size_t i = 0; i + 1 < pcm.size() && test_frames; i += 2, --test_frames) {
+                const auto elapsed = 28800 - test_frames;
+                const double envelope = std::min({1.0, elapsed / 480.0, test_frames / 480.0});
+                const int tone = int(std::sin(elapsed * (6.283185307179586 * 440.0 / 48000.0)) * volume * 40 * envelope);
+                pcm[i] = int16_t(std::clamp(int(pcm[i]) + tone, -32768, 32767));
+                pcm[i + 1] = int16_t(std::clamp(int(pcm[i + 1]) + tone, -32768, 32767));
+            }
+        }
+        if (profiling) RT64::AudioProfile::callbackEnd(audio_profile_stream,
+            callback, (audio_output.underruns() - missing_before) / 2);
+    };
+    const bool present = std::find(names.begin(), names.end(), selected) != names.end();
+    auto opened = selected.empty() || present
+        ? SDL_OpenAudioDevice(selected.empty() ? nullptr : selected.c_str(), 0, &desired, &obtained, 0) : 0;
+    const bool fallback = !selected.empty() && !opened;
+    std::string error;
+    if (fallback) {
+        error = present ? "Selected output unavailable: " + std::string(SDL_GetError()) : "The selected output is not connected.";
+        opened = SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, 0);
+    }
+    if (!opened) {
+        if (!error.empty()) error += " ";
+        error += std::string("Audio unavailable: ") + SDL_GetError();
+    }
+    std::string active;
+    if (opened) {
+        active = selected;
+        if (selected.empty() || fallback) {
+            char* name = nullptr; SDL_AudioSpec spec{};
+            active = SDL_GetDefaultAudioInfo(&name, &spec, 0) == 0 && name ? name : "System default";
+            SDL_free(name);
+        }
+    }
+    {
+        std::lock_guard lock(devices_mutex);
+        devices.names = std::move(names); devices.active = std::move(active);
+        devices.error = std::move(error); devices.fallback = fallback;
+        publish_devices_locked();
+    }
+    return {opened, obtained.samples};
+}
+
+void publish_audio_activity_locked() {
+    if (audio_profile_active)
+        RT64::AudioProfile::phase(audio_profile_stream,
+            audio_activity == RT64::AudioProfile::Phase::Shutdown ? audio_activity :
+            audio_transaction_paused ? RT64::AudioProfile::Phase::Paused : audio_activity);
+}
+
+void finish_audio_profile_locked() {
+    std::lock_guard phase_lock(audio_phase_mutex);
+    if (!audio_profile_active) return;
+    audio_activity = RT64::AudioProfile::Phase::Shutdown;
+    publish_audio_activity_locked();
+    RT64::AudioProfile::stop(audio_profile_stream);
+    audio_profile_active = false;
+}
 
 void start_audio_if_ready_locked() {
-    if (audio_device && !audio_started && audio_callback_frames &&
+    if (audio_device && !audio_playback_pauses && !audio_started && audio_callback_frames &&
         audio_output.size() / 2 >= audio_callback_frames) {
+        std::lock_guard phase_lock(audio_phase_mutex);
+        if (audio_activity == RT64::AudioProfile::Phase::Shutdown) return;
         audio_started = true;
-        RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Gameplay);
         SDL_PauseAudioDevice(audio_device, 0);
     }
 }
+
+void pause_playback_locked() {
+    if (!audio_stream)
+        throw std::runtime_error("Audio output is unavailable for saving state");
+    if (audio_playback_pauses == UINT32_MAX)
+        throw std::overflow_error("Audio playback pause ownership overflow");
+    if (audio_playback_pauses++ != 0) return;
+    if (audio_device) SDL_PauseAudioDevice(audio_device, 1);
+    std::lock_guard phase_lock(audio_phase_mutex);
+    audio_transaction_paused = true;
+    publish_audio_activity_locked();
+}
+
+void resume_playback_locked() noexcept {
+    if (audio_playback_pauses == 0) std::terminate();
+    if (--audio_playback_pauses != 0) return;
+    std::lock_guard phase_lock(audio_phase_mutex);
+    audio_transaction_paused = false;
+    publish_audio_activity_locked();
+    if (audio_device && audio_activity != RT64::AudioProfile::Phase::Shutdown &&
+        (audio_started || (audio_callback_frames && audio_output.size() / 2 >= audio_callback_frames))) {
+        audio_started = true;
+        SDL_PauseAudioDevice(audio_device, 0);
+    }
+}
+}
+
+void set_audio_activity(ultramodern::AudioActivity activity) {
+    using Phase = RT64::AudioProfile::Phase;
+    Phase next;
+    switch (activity) {
+        case ultramodern::AudioActivity::Startup: next = Phase::Startup; break;
+        case ultramodern::AudioActivity::Gameplay: next = Phase::Gameplay; break;
+        case ultramodern::AudioActivity::Paused: next = Phase::Paused; break;
+        case ultramodern::AudioActivity::Shutdown: next = Phase::Shutdown; break;
+        case ultramodern::AudioActivity::Menu: next = Phase::Menu; break;
+        case ultramodern::AudioActivity::Cutscene: next = Phase::Cutscene; break;
+        case ultramodern::AudioActivity::Loading: next = Phase::Loading; break;
+        default: throw std::runtime_error("Invalid native audio activity");
+    }
+    std::lock_guard phase_lock(audio_phase_mutex);
+    if (audio_activity == Phase::Shutdown || audio_activity == next) return;
+    audio_activity = next;
+    publish_audio_activity_locked();
 }
 
 bool open_audio_locked(uint32_t frequency) {
     if (frequency == 0 ||
         frequency > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
         return false;
-    }
-    if (audio_device == 0) {
-        SDL_AudioSpec desired{};
-        desired.freq = 48000;
-        desired.format = AUDIO_S16SYS;
-        desired.channels = 2;
-        desired.samples = 512;
-        desired.callback = [](void*, Uint8* data, int bytes) {
-            const bool profiling = RT64::PerformanceProfiler::enabled();
-            const uint64_t callback = ++audio_profile_callback;
-            const uint64_t missing_before = audio_output.underruns();
-            if (profiling) RT64::AudioProfile::callbackBegin(audio_profile_stream,
-                callback, size_t(bytes) / (2 * sizeof(int16_t)), audio_output.size() / 2);
-            audio_output.consume(std::span(reinterpret_cast<int16_t*>(data), size_t(bytes) / sizeof(int16_t)));
-            if (profiling) RT64::AudioProfile::callbackEnd(audio_profile_stream,
-                callback, (audio_output.underruns() - missing_before) / 2);
-        };
-        SDL_AudioSpec obtained{};
-        audio_device = SDL_OpenAudioDevice(
-            nullptr, 0, &desired, &obtained, 0);
-        if (audio_device == 0) {
-            return false;
-        }
-        audio_output_frequency = static_cast<uint32_t>(obtained.freq);
-        audio_callback_frames = obtained.samples;
-        audio_started = false;
-        RT64::AudioProfile::start(++audio_profile_stream, audio_output_frequency, 2);
     }
     try {
         auto replacement = std::make_unique<jfc::audio::StateStream>(frequency, audio_output_frequency);
@@ -80,9 +206,8 @@ bool open_audio_locked(uint32_t frequency) {
         audio_stream.reset();
     }
     if (audio_stream == nullptr) {
-        SDL_CloseAudioDevice(audio_device);
-        RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Shutdown);
-        RT64::AudioProfile::stop(audio_profile_stream);
+        if (audio_device) SDL_CloseAudioDevice(audio_device);
+        finish_audio_profile_locked();
         audio_device = 0;
         audio_output_frequency = 0;
         audio_callback_frames = 0;
@@ -94,36 +219,144 @@ bool open_audio_locked(uint32_t frequency) {
     return true;
 }
 
+namespace {
+void output_worker(std::stop_token stop) {
+    using Clock = std::chrono::steady_clock;
+    auto last_silent = Clock::now(), next_retry = last_silent;
+    uint64_t fractional_frames = 0;
+    while (!stop.stop_requested()) {
+        {
+            std::unique_lock wake(device_wake_mutex);
+            device_wake.wait_for(wake, std::chrono::milliseconds(100), [&] {
+                return stop.stop_requested() || reopen_device.load() || test_pending.load();
+            });
+        }
+        if (stop.stop_requested()) break;
+        bool retry = false, paused = false;
+        SDL_AudioDeviceID retired = 0;
+        {
+            std::lock_guard lock(audio_mutex);
+            const auto now = Clock::now();
+            if (!audio_device && !audio_playback_pauses) {
+
+                const auto ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now - last_silent).count());
+                const auto seconds = ns / 1000000000;
+                const auto remainder = (ns % 1000000000) * 48000 + fractional_frames;
+                const auto frames = std::min<uint64_t>(seconds, 120) * 48000 + remainder / 1000000000;
+                fractional_frames = remainder % 1000000000;
+                audio_output.discard(size_t(frames * 2));
+            }
+            last_silent = now;
+
+            paused = audio_playback_pauses != 0;
+            retry = !paused && (reopen_device.exchange(false) || (!audio_device && now >= next_retry) ||
+                (audio_device && SDL_GetAudioDeviceStatus(audio_device) == SDL_AUDIO_STOPPED));
+            if (retry) {
+                retired = audio_device;
+                if (retired) SDL_PauseAudioDevice(retired, 1);
+                audio_device = 0; audio_started = false; test_frames = 0;
+            }
+        }
+        if (paused) {
+            std::unique_lock wake(device_wake_mutex);
+            device_wake.wait_for(wake, std::chrono::milliseconds(20));
+            continue;
+        }
+        if (retry) {
+
+            if (retired) SDL_CloseAudioDevice(retired);
+            auto opened = open_output();
+            std::lock_guard lock(audio_mutex);
+            audio_device = opened.device; audio_callback_frames = opened.frames;
+            start_audio_if_ready_locked();
+            last_silent = Clock::now(); next_retry = last_silent + std::chrono::seconds(2);
+            fractional_frames = 0;
+        }
+        if (test_pending.exchange(false)) {
+            std::lock_guard lock(audio_mutex);
+            if (audio_playback_pauses) { test_pending = true; continue; }
+            if (audio_device) {
+                SDL_LockAudioDevice(audio_device); test_frames = 28800; SDL_UnlockAudioDevice(audio_device);
+                audio_started = true; SDL_PauseAudioDevice(audio_device, 0);
+            }
+        }
+    }
+}
+}
+
 bool initialize_audio() {
+    std::lock_guard lifecycle(device_lifecycle_mutex);
+    if (device_worker.joinable()) return true;
     std::lock_guard lock(audio_mutex);
-    return open_audio_locked(audio_input_frequency);
+    audio_output_frequency = 48000;
+    {
+        std::lock_guard phase_lock(audio_phase_mutex);
+        audio_activity = RT64::AudioProfile::Phase::Startup;
+        RT64::AudioProfile::start(++audio_profile_stream, audio_output_frequency, 2);
+        audio_profile_active = true;
+    }
+    if (!open_audio_locked(audio_input_frequency)) {
+        finish_audio_profile_locked();
+        return false;
+    }
+    auto opened = open_output();
+    audio_device = opened.device; audio_callback_frames = opened.frames;
+    reopen_device = false; test_pending = false;
+    start_audio_if_ready_locked();
+    SDL_AddEventWatch(watch_audio, nullptr);
+    try { device_worker = std::jthread(output_worker); }
+    catch (...) {
+        SDL_DelEventWatch(watch_audio, nullptr);
+        if (audio_device) SDL_CloseAudioDevice(audio_device);
+        audio_device = 0; audio_stream.reset(); finish_audio_profile_locked();
+        throw;
+    }
+    return true;
 }
 
 void shutdown_audio() {
+    std::lock_guard lifecycle(device_lifecycle_mutex);
+    ::set_audio_activity(ultramodern::AudioActivity::Shutdown);
+    SDL_DelEventWatch(watch_audio, nullptr);
+    device_worker.request_stop(); device_wake.notify_one();
+    if (device_worker.joinable()) device_worker.join();
     std::lock_guard lock(audio_mutex);
-    if (audio_stream != nullptr) {
-        audio_stream.reset();
-    }
-    if (audio_device != 0) {
-        SDL_CloseAudioDevice(audio_device);
-        RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Shutdown);
-        RT64::AudioProfile::stop(audio_profile_stream);
-        audio_device = 0;
-    }
-    audio_started = false;
+    if (audio_device) SDL_CloseAudioDevice(audio_device);
+    audio_device = 0; audio_stream.reset(); finish_audio_profile_locked();
+    audio_started = false; test_frames = 0;
     audio_output_frequency = audio_callback_frames = 0;
     audio_output.clear();
 }
 
+uint64_t jfc::audio::output_revision() { return devices_revision.load(std::memory_order_acquire); }
+jfc::audio::OutputDevices jfc::audio::output_devices() {
+    std::lock_guard lock(devices_mutex); return devices;
+}
+bool jfc::audio::select_output(const std::string& name) {
+    if (name.size() > 1024 || name.find('\0') != std::string::npos) return false;
+    {
+        std::lock_guard lock(devices_mutex);
+        if (devices.selected == name) return true;
+        devices.selected = name; publish_devices_locked();
+    }
+    refresh_outputs(); return true;
+}
+void jfc::audio::refresh_outputs() { reopen_device = true; device_wake.notify_one(); }
+void jfc::audio::test_output(double volume) {
+    test_volume.store(int(std::clamp(std::isfinite(volume) ? volume : 0.0, 0.0, 100.0)));
+    test_pending = true; device_wake.notify_one();
+}
+
 void queue_audio_samples(int16_t* samples, size_t sample_count, double main_volume) {
-    if (samples == nullptr || sample_count < 2) {
-        return;
-    }
+    if (sample_count == 0) return;
+    if (!samples || (sample_count & 1) || sample_count > size_t(INT_MAX) / sizeof(int16_t))
+        throw std::runtime_error("Invalid host stereo audio input extent");
+    if (!std::isfinite(main_volume))
+        throw std::runtime_error("Invalid host audio volume");
     std::lock_guard lock(audio_mutex);
-    if (audio_device == 0 || audio_stream == nullptr) {
+    if (audio_stream == nullptr) {
         return;
     }
-    sample_count &= ~size_t{1};
     if (RT64::PerformanceProfiler::enabled()) {
 
         RT64::PerformanceProfiler::recordCounter(
@@ -158,20 +391,27 @@ void queue_audio_samples(int16_t* samples, size_t sample_count, double main_volu
     }
 }
 
-size_t frames_remaining() {
+ultramodern::audio_queue_state_t audio_queue_state() {
     std::lock_guard lock(audio_mutex);
-    if (audio_device == 0 || audio_output_frequency == 0) {
-        return 0;
+    if (audio_stream == nullptr || audio_output_frequency == 0) {
+        return {};
     }
     const size_t output_frames =
         audio_output.size() / 2;
-    const size_t input_frames = output_frames * audio_input_frequency / audio_output_frequency;
+    const size_t input_frames = uint64_t(output_frames) * audio_input_frequency / audio_output_frequency;
+    const size_t pending_frames = audio_stream ? audio_stream->pending_input_frames() : 0;
     if (RT64::PerformanceProfiler::enabled()) {
         RT64::PerformanceProfiler::recordCounter(
             "Audio.Native.RemainingFrames", static_cast<double>(input_frames),
             0, audio_input_frequency, audio_output_frequency);
+        RT64::PerformanceProfiler::recordCounter(
+            "Audio.Native.PendingInputFrames", static_cast<double>(pending_frames),
+            0, audio_input_frequency, audio_output_frequency);
+        RT64::PerformanceProfiler::recordCounter(
+            "Audio.Native.AuthoredRemainingFrames", static_cast<double>(input_frames + pending_frames),
+            0, audio_input_frequency, audio_output_frequency);
     }
-    return input_frames;
+    return {input_frames, pending_frames};
 }
 
 void set_frequency(uint32_t frequency) {
@@ -179,7 +419,7 @@ void set_frequency(uint32_t frequency) {
     if (frequency == audio_input_frequency) {
         return;
     }
-    if (audio_device == 0) {
+    if (audio_stream == nullptr) {
         audio_input_frequency = frequency;
         return;
     }
@@ -210,6 +450,15 @@ jfc::audio::Samples read_samples(jfc::state::Reader& in, size_t maximum) {
 }
 }
 
+jfc::state::AudioPlaybackPause::AudioPlaybackPause() {
+    std::lock_guard lock(audio_mutex);
+    pause_playback_locked();
+}
+jfc::state::AudioPlaybackPause::~AudioPlaybackPause() {
+    std::lock_guard lock(audio_mutex);
+    resume_playback_locked();
+}
+
 struct jfc::state::AudioPause::Impl {
     std::unique_lock<std::mutex> lock{audio_mutex, std::defer_lock};
     std::unique_ptr<jfc::audio::StateStream> prepared_stream;
@@ -217,18 +466,10 @@ struct jfc::state::AudioPause::Impl {
     size_t prepared_count = 0;
     std::array<uint8_t, 4096> prepared_dmem{};
     ultramodern::state::AudioState prepared_runtime;
-    bool prepared = false, committed = false, acquired = false;
+    bool prepared = false, committed = false, acquired = false, playback_acquired = false;
     ~Impl() {
         if (acquired) {
-            if (audio_device) {
-                if (audio_started) {
-                    RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Gameplay);
-                    SDL_PauseAudioDevice(audio_device, 0);
-                } else {
-                    RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Startup);
-                    start_audio_if_ready_locked();
-                }
-            }
+            if (playback_acquired) resume_playback_locked();
             state_audio_paused.store(false, std::memory_order_release);
         }
     }
@@ -239,9 +480,8 @@ jfc::state::AudioPause::AudioPause() : impl(std::make_unique<Impl>()) {
         throw std::runtime_error("Audio save-state transaction already active");
     impl->acquired = true;
     impl->lock.lock();
-    if (!audio_device || !audio_stream) throw std::runtime_error("Audio output is unavailable for saving state");
-    SDL_PauseAudioDevice(audio_device, 1);
-    RT64::AudioProfile::phase(audio_profile_stream, RT64::AudioProfile::Phase::Paused);
+    pause_playback_locked();
+    impl->playback_acquired = true;
 }
 jfc::state::AudioPause::~AudioPause() = default;
 jfc::state::Bytes jfc::state::AudioPause::capture() const {

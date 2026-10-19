@@ -24,6 +24,7 @@ struct Edges {
     bool lower_available = false;
     bool l4_held = false;
     bool upper_available = false;
+    bool r4_held = false;
 };
 
 inline Edges parse_key_event(uint16_t type, uint16_t code, int32_t value) {
@@ -67,11 +68,13 @@ inline Edges parse_report(
         select && !select_held,
     };
     result.l5 = l5 && !l5_held;
+    result.select_held = select;
     result.r5 = r5 && !r5_held;
     result.l5_held = l5;
     result.r5_held = r5;
     result.lower_available = true;
     result.l4_held = l4;
+    result.r4_held = r4;
     result.upper_available = true;
     l4_held = l4;
     r4_held = r4;
@@ -81,6 +84,7 @@ inline Edges parse_report(
     return result;
 }
 
-Edges poll();
+using SnapshotConsumer = void (*)(const Edges&);
+Edges poll(SnapshotConsumer consume = nullptr);
 
 }

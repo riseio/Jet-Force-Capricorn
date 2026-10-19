@@ -8,6 +8,13 @@
 #include <exception>
 #include <vector>
 namespace jfc::textures {
+enum class PreparationStage { Checking, Preparing, Verifying };
+struct PreparationProgress {
+    PreparationStage stage{};
+    uint64_t completed{};
+    uint64_t total{};
+    bool operator==(const PreparationProgress&) const = default;
+};
 struct Image { uint32_t width{}, height{}; std::vector<uint8_t> rgba; };
 struct PreparationCancelled final : std::exception {
     const char* what() const noexcept override {return "Texture preparation cancelled by application shutdown";}
@@ -31,5 +38,6 @@ void write_pack(std::span<const uint8_t> validated_rom, FILE* output,
     const std::function<void(size_t)>& progress = {}, std::stop_token shutdown = {});
 std::filesystem::path prepare_pack(std::span<const uint8_t> validated_rom,
     const std::filesystem::path& application_folder,
-    const std::function<void(size_t)>& progress = {}, std::stop_token shutdown = {});
+    const std::function<void(size_t)>& progress = {}, std::stop_token shutdown = {},
+    const std::function<void(PreparationProgress)>& details = {});
 }
