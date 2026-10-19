@@ -1,63 +1,47 @@
 # Jet Force Capricorn
 
-A native PC and Steam Deck port of **Jet Force Gemini**, with widescreen support,
+A native PC and Steam Deck port with widescreen support,
 interpolated rendering, modern controls and optional quality-of-life improvements.
 
 ## Download and play
 
 Windows and Linux builds are available from [Releases](https://github.com/riseio/Jet-Force-Capricorn/releases).
-You need your own **Jet Force Gemini (USA), revision 0** ROM. Select it on first
-launch; `.z64`, `.v64` and `.n64` byte orders are supported.
-
-The first launch compiles native game code locally from your ROM. Later launches
-reuse it. No development tools or internet connection are needed to play.
-The 0.3.169 packages contain no ROM, extracted game assets or translated game code.
-
-- **Windows:** Run `JetForceCapricorn-Portable.exe` from a writable folder.
-- **Linux:** Make the AppImage executable and open it.
-- **Steam Deck:** Add the executable AppImage to Steam in Desktop Mode, select
-  a Gamepad layout and launch it from Gaming Mode without Proton.
+You need your own **revision 0** ROM. The packages contain no ROM, extracted game assets or translated game code.
 
 Both packages keep saves, settings and generated content in the adjacent `data`
 folder. Keep that folder when replacing or moving the executable.
 
-Enhanced textures are generated locally from your ROM. Choose **Install enhanced
+Enhanced textures are generated locally. Choose **Install enhanced
 textures** in the launcher or Graphics settings, then switch them with
-**Graphics > Enhanced Textures** or View / Select during play. Installation can
-be cancelled; removing the pack keeps your ROM, saves and settings.
+**Graphics > Enhanced Textures** or View / Select during play.
 
 ## Enhancements
 
 - Widescreen and ultrawide support, with adjusted menus and HUD placement.
 - Higher resolutions, anti-aliasing and interpolated rendering for high refresh rate displays.
-- Mouse aiming and modern twin-stick controls, including aiming while crouched.
-- Adjustable field of view and camera distance, with separate reset buttons.
+- Mouse aiming and modern twin-stick controls, including new things like aiming while crouched.
+- Adjustable field of view and camera distance.
 - Separate horizontal and vertical inversion for each stick.
 - Remappable controls, sensitivity, deadzones and rumble settings.
 - Sniper aiming sensitivity that scales with zoom.
-- Audio output device selection.
 - Adjustable draw distance and fog strength.
-- Cleaner original fonts and UI artwork, using images from your own ROM.
+- Cleaner original fonts and UI artwork, generated using images from your own supplied game.
 - Direct weapon shortcuts, quick throwable selection and persistent save states.
-- Ordinary game saves at completed area transitions.
+- The game now saves at almost all area transitions not just the end of area ones.
 
 ## QOL Toggles
-
-Open settings with **Escape / R4**, or choose Options in the pause menu, then
-select **QOL**. Each option is independent. These defaults apply to a fresh
-configuration; existing preferences are kept.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Modern Health Display | Off | Shows reserve health containers and the current container as a capsule bar above the weapon panel. |
-| Room Collectible Counters | On | Shows your Mizar token total and Tribals still missing in the current room. Lost Tribals remain counted as missing. |
-| Area Collectible Tracker | On | Shows remaining keys, including coloured keys, spaceship parts and Floyd robot components, including chest contents and event rewards. Icons stack above tokens and Tribals; collected categories disappear. |
+| Room Collectible Counters | On | Shows your Mizar token total and Tribals still missing in the current room. |
+| Area Collectible Tracker | On | Shows remaining keys, including coloured keys, spaceship parts and Floyd robot components. |
 | Weapon Shortcut HUD | On | Shows the four assigned weapon icons in a top-right D-pad, with numbers 1-4 for keyboard shortcuts. |
 | Cutscene Skipping | On | Use Space, Enter, keypad Enter or Start to skip a cutscene. |
 | Invulnerable Tribals | Off | Protects Tribals from lethal damage. |
 | Unlimited Lives | On | Restarts after death as though an extra life were available, without consuming continues. |
 | Persistent Tribal Rescues | On | Shares individually rescued Tribals across characters and return visits in the same save slot. |
-| Final Tribal Requirement | Original | Choose the original requirement or reduce the final spaceship-part threshold to 70%, 50% or 25%. True 100% completion stays separate. |
+| Final Tribal Requirement | Original | Choose the original requirement or reduce the final spaceship-part threshold to 70%, 50% or 25%.  |
 | Skip Seen Ship Landings | Off | Automatically skips a ship landing after you have watched that landing to completion in the same save slot. |
 | Quick Character Switching | Off | Switches to the next unlocked character at that character's saved location without returning to space. |
 | Skip Seen Character Travel | Off | Skips repeat character-selection travel sequences. |
@@ -65,24 +49,24 @@ configuration; existing preferences are kept.
 | Double Pistol Recharge | Off | Recharges the default pistol twice as fast, with its normal firing rate. |
 | Double Ammo Pickups | Off | Doubles small, large, enemy-dropped and duplicate-weapon ammo awards, capped at normal capacity. |
 | Persistent Dropped Pickups | Off | Keeps dropped health, ammo and collectible heads until collected or the map is left. |
-| Upgraded Shotgun | On | A fresh press fires six fully charged energy spheres with a wider spread, using one round. Holding does not repeat the blast. |
+| Upgraded Shotgun | On | A button press fires six fully charged energy spheres with a wider spread, using one round. No need to hold anymore. |
 | Upgraded Flamethrower | On | Half fuel use, 50% more burning damage and a hurt reaction whenever the enemy can be staggered. |
-| Upgraded Shocker | On | Four times the beam range, arcs to up to three adjacent enemies and a reserve of at least 100. Arcs respect walls; earned capacity upgrades are kept. |
+| Upgraded Shocker | On | Four times the beam range, arcs to up to three adjacent enemies and a reserve of at least 100. |
 | Persistent Corpses | Off | Keeps bodies until the area is left. Turning this off resumes fading; memory cleanup can still remove bodies. |
 | Mission Complete Refill | On | Refills health and owned weapon ammo when you dismiss the mission-complete screen. |
-| Double Enemy Drop Chance | On | Raises random enemy weapon/ammo drop chance from one in three to two in three. Guaranteed rewards and pickup quantities stay the same. |
-| Fast Throws | On | Grenade and other throwable animations take half as long. Fuses and projectile speed stay the same. |
+| Double Enemy Drop Chance | On | Raises random enemy weapon/ammo drop chance from one in three to two in three. |
+| Fast Throws | On | Grenade and other throwable animations take half as long. |
 | Double Robot Mission Time | Off | Doubles the time limit for a newly started or retried Floyd mission. |
-| Hide Floyd Companion | Off | Hides the following robot and companion crosshair outside Floyd missions and story scenes. |
+| Hide Floyd Companion | Off | Hides the floyd robot and companion crosshair outside Floyd missions and story scenes. |
 | Half Boss Health | Off | New boss fights and phases start at half health. Existing saved health is retained. |
 | Boss Target Health | Off | Shows the health and vulnerability of the boss part under your aim. |
 | Double Pistol Boss Damage | On | Pistol shots deal twice their normal damage to vulnerable boss parts. |
 | Boss Phase Ammo Refill | On | Defeating a boss phase or weak point restores 25% of each owned weapon's capacity. |
 | Boss Weak-point Halos | On | Marks damageable boss regions with pulsing green halos. |
-| Open Mechantis Final Phase | On | After a mantis loses its weapons, its final weak point remains vulnerable during movement and attacks. |
+| Open Mechantis Final Phase | On | (For the boss fight right before the game opens up) After a mantis loses its weapons, its final weak point remains vulnerable during movement and attacks. |
 | Halo-style Health | Off | After 30 damage-free gameplay seconds, restores missing health every five seconds over the next 60 seconds. |
 | Ship Part Scanner | Off | Choose Audio, Visual or Audio + Visual guidance towards missing ship parts. Visual hints also need Show Guidance Text. |
-| Show Guidance Text | Off | Shows ship-part scanner hints and guidance for the selected final Tribal requirement. |
+| Show Guidance Text | Off | Shows ship-part scanner hints and guidance for the selected final Tribal requirement. This is mostly for debugging i would leave it off |
 
 ### Weapon shortcuts and throwables
 
@@ -95,20 +79,12 @@ To assign another, equip it, hold **Ctrl / L4**, then press **G / Y**.
 Grenades, shurikens, fish food, plasma bombs, remote mines and cluster bombs can
 be assigned; flares retain their normal weapon controls.
 
-### Saving
+### Quick Saving
 
 Press **F6 / L5** during gameplay to save a state, then **F9 / R5** to restore it,
 including after restarting the game. Saving again replaces the manual state.
-Ordinary game saves are separate. Restoring a state keeps your current QOL preferences.
+Ordinary game saves are separate. Restoring a state keeps your current QOL preferences. On Steamdeck you need to hold L4 and press the two buttons.
 
-## Other optional settings
-
-- **Graphics:** vertical FOV from 30 to 89 degrees, with 60 as the default;
-  camera distance from 50% to 150%, with 100% as the default. Wide screens
-  expand the horizontal view. Scope zoom and camera collision retain their normal behaviour.
-- **Graphics:** enhanced textures, draw distance, fog, anti-aliasing and frame-rate settings.
-- **Sound:** choose an audio output device.
-- **Controls:** sensitivity, axis inversion, deadzones and rumble strength.
 
 ## PC controls
 
