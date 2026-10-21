@@ -22,6 +22,7 @@ struct OutputDevices {
     bool fallback = false;
 };
 uint64_t output_revision();
+bool output_failed();
 OutputDevices output_devices();
 bool select_output(const std::string& name);
 void refresh_outputs();

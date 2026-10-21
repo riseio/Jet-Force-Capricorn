@@ -651,7 +651,7 @@ text = "ctx->f8.fl = jfc_adjust_camera_fov(ctx->f8.fl);"
 [[patches.hook]]
 func = "func_8002C078"
 before_vram = 0x8002C678
-text = "jfc_adjust_camera_distance(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r29 + 0xC4U, 3);"
+text = "jfc_adjust_camera_distance(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r29 + 0xC4U, 3); { fpr jfc_height; jfc_height.u32l = (uint32_t)MEM_W(0xC8, ctx->r29); jfc_height.fl = jfc_adjust_camera_height(rdram, (uint32_t)ctx->r16, jfc_height.fl); MEM_W(0xC8, ctx->r29) = jfc_height.u32l; }"
 
 [[patches.hook]]
 func = "func_8002CF78"
@@ -667,6 +667,11 @@ text = "uint32_t jfc_camera_world_radius = ctx->f0.u32l; ctx->f0.fl = jfc_camera
 func = "func_8002CF78"
 before_vram = 0x8002DD28
 text = "MEM_W(0xC0, ctx->r29) = jfc_camera_world_radius; ctx->f0.u32l = jfc_camera_world_radius; ctx->f14.fl = jfc_camera_distance_gain(rdram, (uint32_t)ctx->r16, ctx->f14.fl);"
+
+[[patches.hook]]
+func = "func_8002CF78"
+before_vram = 0x8002E158
+text = "{ fpr jfc_height; jfc_height.u32l = (uint32_t)MEM_W(0x90, ctx->r29); jfc_height.fl = jfc_adjust_camera_height(rdram, (uint32_t)ctx->r16, jfc_height.fl); MEM_W(0x90, ctx->r29) = jfc_height.u32l; }"
 
 [[patches.hook]]
 func = "func_8002B378"
@@ -812,6 +817,56 @@ text = "jfc_prepare_target_reticle(rdram, ctx);"
 func = "frontDrawTarget"
 before_vram = 0x80D008A8
 text = "if (!jfc_should_draw_target_reticle()) return;"
+
+[[patches.hook]]
+func = "frontDrawTarget"
+before_vram = 0x80D00908
+text = "jfc_cpu_cursor_begin(rdram, (uint32_t)ctx->r17, (int32_t)ctx->r20, (int32_t)ctx->r19, (uint32_t)ctx->r5, jfc_should_interpolate_target_reticle());"
+
+[[patches.hook]]
+func = "frontDrawTarget"
+before_vram = 0x80D01598
+text = "jfc_cpu_cursor_end(rdram);"
+
+[[patches.hook]]
+func = "fxOutputLines"
+before_vram = 0x8006E188
+text = "jfc_cpu_cursor_output_begin(rdram);"
+
+[[patches.hook]]
+func = "fxOutputLines"
+before_vram = 0x8006E220
+text = "jfc_cpu_cursor_line((uint32_t)ctx->r9);"
+
+[[patches.hook]]
+func = "fxOutputLines"
+before_vram = 0x8006EBB8
+text = "jfc_cpu_cursor_text((uint32_t)MEM_W(0x9C, ctx->r29));"
+
+[[patches.hook]]
+func = "fxOutputLines"
+before_vram = 0x8006EDBC
+text = "jfc_cpu_cursor_output_end();"
+
+[[patches.hook]]
+func = "fxInitLines"
+before_vram = 0x8006D0D8
+text = "jfc_cpu_cursor_clear();"
+
+[[patches.hook]]
+func = "func_overlay_50_03200C40_1F6A8E8"
+before_vram = 0x832013D4
+text = "ctx->f2.fl = jfc_modern_aim_response(rdram, (uint32_t)ctx->r16, ctx->f2.fl);"
+
+[[patches.hook]]
+func = "func_overlay_51_033008F0_1F6D070"
+before_vram = 0x83301084
+text = "ctx->f2.fl = jfc_modern_aim_response(rdram, (uint32_t)ctx->r16, ctx->f2.fl);"
+
+[[patches.hook]]
+func = "func_overlay_52_03400C40_1F6F688"
+before_vram = 0x834013D4
+text = "ctx->f2.fl = jfc_modern_aim_response(rdram, (uint32_t)ctx->r16, ctx->f2.fl);"
 
 [[patches.hook]]
 func = "guPerspectiveF"

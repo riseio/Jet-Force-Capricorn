@@ -126,7 +126,7 @@ index 5f4420f..8f87a68 100644
 +    void pulse_visual_enhancement_toggle(
 +        VisualToggleSource source, const char* source_name);
 diff --git a/recompinput/include/recompinput/input_state.h b/recompinput/include/recompinput/input_state.h
-index 1961e29..c5b42fc 100644
+index 1961e29..bbd755b 100644
 --- a/recompinput/include/recompinput/input_state.h
 +++ b/recompinput/include/recompinput/input_state.h
 @@ -3,0 +4 @@
@@ -138,19 +138,21 @@ index 1961e29..c5b42fc 100644
 +    bool input_field_blocked(int player, const InputField& field);
 @@ -22,0 +25 @@ namespace recompinput {
 +        InputChordState chord;
-@@ -42,0 +46,2 @@ namespace recompinput {
+@@ -39,0 +43 @@ namespace recompinput {
++    void take_mouse_deltas(float* x, float* y);
+@@ -42,0 +47,2 @@ namespace recompinput {
 +    void set_stick_axis_inversions(bool left_x, bool left_y, bool right_x, bool right_y);
 +    bool input_uses_suppressed_axis(const InputField& field);
-@@ -45 +50 @@ namespace recompinput {
+@@ -45 +51 @@ namespace recompinput {
 -    ControllerState &get_controller_state(SDL_JoystickID joystick_id);
 +    void update_controller_sensor(const SDL_ControllerSensorEvent& event);
-@@ -46,0 +52,3 @@ namespace recompinput {
+@@ -46,0 +53,3 @@ namespace recompinput {
 +    SDL_GameController *register_controller_device(int device_index);
 +    size_t discover_connected_controllers();
 +    size_t get_registered_controller_count();
-@@ -50,0 +59 @@ namespace recompinput {
+@@ -50,0 +60 @@ namespace recompinput {
 +    void clear_mouse_deltas();
-@@ -51,0 +61,7 @@ namespace recompinput {
+@@ -51,0 +62,7 @@ namespace recompinput {
 +    void record_input_event(const SDL_Event& event);
 +    void release_input_event_pulse(const SDL_Event& event);
 +    bool get_event_input_digital(int controller_num, const InputField& field);
@@ -405,10 +407,10 @@ index 855ec2e..a8b001f 100644
 +    constexpr size_t num_bindings_per_input = 4;
 diff --git a/recompinput/include/recompinput/relative_delta_frame.h b/recompinput/include/recompinput/relative_delta_frame.h
 new file mode 100644
-index 0000000..69db0d5
+index 0000000..bc81920
 --- /dev/null
 +++ b/recompinput/include/recompinput/relative_delta_frame.h
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,36 @@
 +#pragma once
 +
 +#include <array>
@@ -429,6 +431,12 @@ index 0000000..69db0d5
 +
 +    const std::array<float, 2>& value() const {
 +        return current_;
++    }
++
++    std::array<float, 2> take() {
++        const auto result = current_;
++        current_ = {};
++        return result;
 +    }
 +
 +    void clear() { current_ = {}; pending_ = {}; }
@@ -948,7 +956,7 @@ index c76a1dc..61d4ada 100644
 +        else reported_failure = false;
 +    }
 diff --git a/recompinput/src/input_state.cpp b/recompinput/src/input_state.cpp
-index 03ed871..39bac3e 100644
+index 03ed871..2b98b2f 100644
 --- a/recompinput/src/input_state.cpp
 +++ b/recompinput/src/input_state.cpp
 @@ -9,0 +10,2 @@
@@ -1272,16 +1280,24 @@ index 03ed871..39bac3e 100644
 -    std::array<float, 2> cur_mouse_delta = InputState.mouse_delta;
 +    std::lock_guard lock{InputState.pending_input_mutex};
 +    const std::array<float, 2> cur_mouse_delta = InputState.mouse_delta.value();
-@@ -312,2 +533,2 @@ void recompinput::get_mouse_deltas(float* x, float* y) {
+@@ -312,2 +533,10 @@ void recompinput::get_mouse_deltas(float* x, float* y) {
 -    *x = cur_mouse_delta[0] * sensitivity;
 -    *y = cur_mouse_delta[1] * sensitivity;
 +    *x = cur_mouse_delta[0] * sensitivity * static_cast<float>(recompui::config::general::get_mouse_sensitivity_x() / 100.0);
 +    *y = cur_mouse_delta[1] * sensitivity * static_cast<float>(recompui::config::general::get_mouse_sensitivity_y() / 100.0);
-@@ -365 +585,0 @@ void recompinput::set_right_analog_suppressed(bool suppressed) {
++}
++
++void recompinput::take_mouse_deltas(float* x, float* y) {
++    std::lock_guard lock{InputState.pending_input_mutex};
++    const auto delta = InputState.mouse_delta.take();
++    const float sensitivity = float(recompui::config::general::get_mouse_sensitivity() / 100.0);
++    *x = delta[0] * sensitivity * float(recompui::config::general::get_mouse_sensitivity_x() / 100.0);
++    *y = delta[1] * sensitivity * float(recompui::config::general::get_mouse_sensitivity_y() / 100.0);
+@@ -365 +593,0 @@ void recompinput::set_right_analog_suppressed(bool suppressed) {
 -// Disable input if any menu that blocks input is open.
-@@ -370 +589,0 @@ bool recompinput::game_input_disabled() {
+@@ -370 +597,0 @@ bool recompinput::game_input_disabled() {
 -// Disable all input if an input is being polled or currently binding.
-@@ -377,3 +596,22 @@ bool recompinput::all_input_disabled() {
+@@ -377,3 +604,22 @@ bool recompinput::all_input_disabled() {
 -ControllerState &recompinput::get_controller_state(SDL_JoystickID joystick_id) {
 -    std::lock_guard lock{ InputState.controllers_mutex };
 -    return InputState.controller_states[joystick_id];
@@ -1307,7 +1323,7 @@ index 03ed871..39bac3e 100644
 +        state.pending_rotation_delta[0] += x;
 +        state.pending_rotation_delta[1] += y;
 +    }
-@@ -390,0 +629,63 @@ SDL_GameController *recompinput::get_controller_from_joystick_id(SDL_JoystickID
+@@ -390,0 +637,63 @@ SDL_GameController *recompinput::get_controller_from_joystick_id(SDL_JoystickID
 +SDL_GameController *recompinput::register_controller_device(int device_index) {
 +    if (device_index < 0 || SDL_IsGameController(device_index) != SDL_TRUE) {
 +        return nullptr;
@@ -1371,14 +1387,14 @@ index 03ed871..39bac3e 100644
 +    return InputState.controller_states.size();
 +}
 +
-@@ -391,0 +693,3 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
+@@ -391,0 +701,3 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
 +    if (controller == nullptr || joystick_id < 0) {
 +        return;
 +    }
-@@ -393 +697 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
+@@ -393 +705 @@ void recompinput::add_controller_state(SDL_JoystickID joystick_id, SDL_GameContr
 -    ControllerState& state = InputState.controller_states[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller))];
 +    ControllerState& state = InputState.controller_states[joystick_id];
-@@ -398,2 +702,19 @@ void recompinput::remove_controller_state(SDL_JoystickID joystick_id) {
+@@ -398,2 +710,19 @@ void recompinput::remove_controller_state(SDL_JoystickID joystick_id) {
 -    std::lock_guard lock{ InputState.controllers_mutex };
 -    InputState.controller_states.erase(joystick_id);
 +    SDL_GameController *controller = nullptr;
@@ -1400,18 +1416,18 @@ index 03ed871..39bac3e 100644
 +    if (controller != nullptr) {
 +        SDL_GameControllerClose(controller);
 +    }
-@@ -403,2 +724,4 @@ void recompinput::add_rotation_deltas(SDL_JoystickID joystick_id, float rot_x, f
+@@ -403,2 +732,4 @@ void recompinput::add_rotation_deltas(SDL_JoystickID joystick_id, float rot_x, f
 -    std::lock_guard lock{ InputState.pending_input_mutex };
 -    ControllerState &state = InputState.controller_states[joystick_id];
 +    std::lock_guard lock{ InputState.controllers_mutex };
 +    const auto found = InputState.controller_states.find(joystick_id);
 +    if (found == InputState.controller_states.end()) return;
 +    ControllerState &state = found->second;
-@@ -411,2 +734 @@ void recompinput::add_mouse_deltas(float delta_x, float delta_y) {
+@@ -411,2 +742 @@ void recompinput::add_mouse_deltas(float delta_x, float delta_y) {
 -    InputState.pending_mouse_delta[0] += delta_x;
 -    InputState.pending_mouse_delta[1] += delta_y;
 +    InputState.mouse_delta.add(delta_x, delta_y);
-@@ -415 +737,6 @@ void recompinput::add_mouse_wheel_delta(int32_t delta) {
+@@ -415 +745,6 @@ void recompinput::add_mouse_wheel_delta(int32_t delta) {
 -    InputState.mouse_wheel_pos.fetch_add(delta);
 +    std::lock_guard lock{ InputState.pending_input_mutex };
 +    InputState.mouse_wheel.add(delta);
@@ -1809,6 +1825,47 @@ index bbb8d6a..24d14c3 100644
 -	IMPORTED_LOCATION ${FREETYPE_LIBRARIES}
 +	IMPORTED_IMPLIB ${FREETYPE_LIBRARIES}
 +	IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../freetype-windows-binaries/release dll/win64/freetype.dll"
+diff --git a/recompui/src/api/ui_api_images.cpp b/recompui/src/api/ui_api_images.cpp
+index c443f1e..c84d4fc 100644
+--- a/recompui/src/api/ui_api_images.cpp
++++ b/recompui/src/api/ui_api_images.cpp
+@@ -6,0 +7 @@
++#include "librecomp/addresses.hpp"
+@@ -11,0 +13 @@
++#include "renderer/ui_image_layout.h"
+@@ -49,0 +52,6 @@ thread_local std::vector<char> swapped_image_bytes;
++static void validate_image_span(uint8_t* rdram, uint32_t address, size_t bytes) {
++    if (!rdram || address < 0x80000000U || bytes > recomp::mem_size ||
++        uint64_t(address - 0x80000000U) > recomp::mem_size - bytes)
++        throw std::out_of_range("UI image data is outside mapped RDRAM");
++}
++
+@@ -54,4 +62,2 @@ void recompui_create_texture_rgba32(uint8_t* rdram, recomp_context* ctx) {
+-    uint32_t cur_id = get_new_texture_id();
+-
+-    // The size in bytes of the image's pixel data.
+-    size_t size_bytes = width * height * 4 * sizeof(uint8_t);
++    const size_t size_bytes = rgba32_layout(width, height).source_bytes;
++    validate_image_span(rdram, uint32_t(data_in), size_bytes);
+@@ -60 +65,0 @@ void recompui_create_texture_rgba32(uint8_t* rdram, recomp_context* ctx) {
+-    // Byteswap copy the pixel data.
+@@ -65 +70 @@ void recompui_create_texture_rgba32(uint8_t* rdram, recomp_context* ctx) {
+-    // Create a texture name from the ID and queue its bytes.
++    uint32_t cur_id = get_new_texture_id();
+@@ -69 +73,0 @@ void recompui_create_texture_rgba32(uint8_t* rdram, recomp_context* ctx) {
+-    // Return the new texture ID.
+@@ -76 +80 @@ void recompui_create_texture_image_bytes(uint8_t* rdram, recomp_context* ctx) {
+-    uint32_t cur_id = get_new_texture_id();
++    validate_image_span(rdram, uint32_t(data_in), size_bytes);
+@@ -78 +81,0 @@ void recompui_create_texture_image_bytes(uint8_t* rdram, recomp_context* ctx) {
+-    // The size in bytes of the image's data.
+@@ -81 +83,0 @@ void recompui_create_texture_image_bytes(uint8_t* rdram, recomp_context* ctx) {
+-    // Byteswap copy the image's data.
+@@ -86 +88 @@ void recompui_create_texture_image_bytes(uint8_t* rdram, recomp_context* ctx) {
+-    // Create a texture name from the ID and queue its bytes.
++    uint32_t cur_id = get_new_texture_id();
+@@ -90 +91,0 @@ void recompui_create_texture_image_bytes(uint8_t* rdram, recomp_context* ctx) {
+-    // Return the new texture ID.
 diff --git a/recompui/src/base/ui_input_edge.hpp b/recompui/src/base/ui_input_edge.hpp
 new file mode 100644
 index 0000000..ef1057f
@@ -1934,7 +1991,7 @@ index 6de7a94..ab2f62e 100644
 @@ -658 +657,0 @@ namespace recompui {
 -
 diff --git a/recompui/src/base/ui_state.cpp b/recompui/src/base/ui_state.cpp
-index 277a421..145b6e0 100644
+index 277a421..8347bf4 100644
 --- a/recompui/src/base/ui_state.cpp
 +++ b/recompui/src/base/ui_state.cpp
 @@ -23,0 +24 @@
@@ -2337,25 +2394,31 @@ index 277a421..145b6e0 100644
 @@ -996 +1043 @@ Rml::ElementDocument* recompui::load_document(const std::filesystem::path& path)
 -    return ui_state->context->LoadDocument(path.string());
 +    return ui_state->context->LoadDocument(recompui::file::path_to_utf8(path));
-@@ -1018 +1065 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1014 +1061,4 @@ void recompui::release_image(const std::string &src) {
+-    Rml::ReleaseTexture(src);
++    queue_ui_action([src] {
++        Rml::ReleaseTexture(src);
++        ui_state->render_interface.release_image(src);
++    });
+@@ -1018 +1068 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -    // Prevent mod installation after the game has started.
 +
-@@ -1028,2 +1075 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1028,2 +1078 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -    // TODO: Needs a progress callback and a prompt for every mod that needs to be confirmed to be overwritten.
 -    // TODO: Run this on a background thread and use the callbacks to advance the state instead of blocking.
 +
-@@ -1052 +1098 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1052 +1101 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -            // Get the mod details for the current mod at this file path.
 +
-@@ -1091 +1137 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1091 +1140 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -        // TODO show errors
 +
-@@ -1109 +1154,0 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1109 +1157,0 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -        // open prompt where confirm finishes the mod installation with the overwritten files
-@@ -1123 +1168 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1123 +1171 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -                // TODO show errors
 +
-@@ -1128 +1173 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
+@@ -1128 +1176 @@ void recompui::drop_files(const std::list<std::filesystem::path> &file_list) {
 -                // TODO show errors
 +
 diff --git a/recompui/src/composites/ui_prompt.cpp b/recompui/src/composites/ui_prompt.cpp
@@ -3026,121 +3089,135 @@ index 0000000..41ac1d3
 +    };
 +}
 diff --git a/recompui/src/core/ui_context.cpp b/recompui/src/core/ui_context.cpp
-index e99229a..411a6b6 100644
+index e99229a..1db1249 100644
 --- a/recompui/src/core/ui_context.cpp
 +++ b/recompui/src/core/ui_context.cpp
-@@ -12,0 +13 @@
+@@ -4,0 +5 @@
++#include <stdexcept>
+@@ -12,0 +14 @@
 +#include "input_capture.h"
-@@ -18 +18,0 @@
+@@ -18 +19,0 @@
 -// Hash implementations for ContextId and ResourceId.
-@@ -44 +44,2 @@ namespace recompui {
+@@ -44 +45,2 @@ namespace recompui {
 -        std::vector<std::tuple<ResourceId, std::string>> to_set_text;     
 +        std::vector<std::tuple<ResourceId, std::string>> to_set_text;
 +        bool shown = false;
-@@ -49 +50 @@ namespace recompui {
+@@ -49 +51 @@ namespace recompui {
 -} // namespace recompui
 +}
-@@ -55,0 +57 @@ static struct {
+@@ -55,0 +58 @@ static struct {
 +    recompui::InputCapture input_capture;
-@@ -167,2 +168,0 @@ void context_error(recompui::ContextId id, ContextErrorType type) {
+@@ -167,2 +169,0 @@ void context_error(recompui::ContextId id, ContextErrorType type) {
 -    // This assumes the error is coming from a mod, as it's unlikely that an end user will see a UI context error
 -    // in the base recomp.
-@@ -191 +190,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
+@@ -185,0 +187,3 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
++        if (add_to_dict && context_state.documents_to_contexts.contains(document)) {
++            throw std::invalid_argument("Document already belongs to a UI context");
++        }
+@@ -191 +194,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
 -        // Create a resource id for the root element in the context.
-@@ -195 +193,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
+@@ -195 +197,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
 -        // Set the root element's resource ID.
-@@ -198 +195,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
+@@ -198 +199,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
 -        // Update the entry for the root element's resource ID in the resources slotmap.
-@@ -209 +205,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
+@@ -209 +209,0 @@ recompui::ContextId create_context_impl(Rml::ElementDocument* document) {
 -// Initialize every document with the base recompui rcss style. This is needed to ensure that everything gets fonts.
-@@ -228 +224 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
+@@ -228 +228 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
 -    // Load base rcss.
 +
-@@ -234,2 +229,0 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
+@@ -234,2 +233,0 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
 -    // TODO: User rcss file should be optional.
 -    // Load user rcss.
-@@ -246 +240 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
+@@ -246 +244 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
 -    rml_stream->SetSourceURL(rcss_file.filename().string());
 +    rml_stream->SetSourceURL(file::path_to_utf8(rcss_file.filename()));
-@@ -248 +241,0 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
+@@ -248 +245,0 @@ void recompui::init_styling(const std::filesystem::path& rcss_file) {
 -    // Merge user rcss with base rcss.
-@@ -260 +253 @@ recompui::ContextId recompui::create_context(const std::filesystem::path& path)
+@@ -260 +257 @@ recompui::ContextId recompui::create_context(const std::filesystem::path& path)
 -    Rml::ElementDocument* doc = recompui::load_document(path.string());
 +    Rml::ElementDocument* doc = recompui::load_document(path);
-@@ -264 +257 @@ recompui::ContextId recompui::create_context(const std::filesystem::path& path)
+@@ -264 +261 @@ recompui::ContextId recompui::create_context(const std::filesystem::path& path)
 -    
 +
-@@ -300,4 +292,0 @@ void recompui::destroy_context(ContextId id) {
+@@ -300,4 +296,0 @@ void recompui::destroy_context(ContextId id) {
 -    // TODO prevent deletion of a context while its mutex is in use. Second lock on the context's mutex before popping
 -    // from the slotmap?
 -    
 -    // Check if the provided id exists.
-@@ -306 +295 @@ void recompui::destroy_context(ContextId id) {
+@@ -306 +299 @@ void recompui::destroy_context(ContextId id) {
 -        // Check if the target context is currently open.
 +
-@@ -310,2 +298,0 @@ void recompui::destroy_context(ContextId id) {
+@@ -310,2 +302,0 @@ void recompui::destroy_context(ContextId id) {
 -    
 -    // Raise an error if the context didn't exist.
-@@ -320 +306,0 @@ void recompui::destroy_context(ContextId id) {
+@@ -315,0 +307,3 @@ void recompui::destroy_context(ContextId id) {
++    if (recompui::is_context_shown(id)) {
++        recompui::hide_context(id);
++    }
+@@ -316,0 +311 @@ void recompui::destroy_context(ContextId id) {
++    id.get_document()->Hide();
+@@ -320 +314,0 @@ void recompui::destroy_context(ContextId id) {
 -    // Delete the provided id.
-@@ -322,0 +309 @@ void recompui::destroy_context(ContextId id) {
+@@ -322,0 +317,3 @@ void recompui::destroy_context(ContextId id) {
 +        id.set_shown(false);
-@@ -332,3 +318,0 @@ void recompui::destroy_all_contexts() {
++        auto* ctx = context_state.all_contexts.get(context_slotmap::key{ id.slot_id });
++        context_state.documents_to_contexts.erase(ctx->document);
+@@ -332,3 +328,0 @@ void recompui::destroy_all_contexts() {
 -    // TODO prevent deletion of a context while its mutex is in use. Second lock on the context's mutex before popping
 -    // from the slotmap
 -
-@@ -342 +326 @@ void recompui::destroy_all_contexts() {
+@@ -342 +336 @@ void recompui::destroy_all_contexts() {
 -        
 +
-@@ -358 +342 @@ void recompui::ContextId::open() {
+@@ -358 +352 @@ void recompui::ContextId::open() {
 -    // Ensure no other context is opened by this thread already.
 +
-@@ -363 +346,0 @@ void recompui::ContextId::open() {
+@@ -363 +356,0 @@ void recompui::ContextId::open() {
 -    // Get the context with this id.
-@@ -368 +351 @@ void recompui::ContextId::open() {
+@@ -368 +361 @@ void recompui::ContextId::open() {
 -        // If the context was found, add it to the opened contexts.
 +
-@@ -374 +356,0 @@ void recompui::ContextId::open() {
+@@ -374 +366,0 @@ void recompui::ContextId::open() {
 -    // Check if the context exists.
-@@ -379 +360,0 @@ void recompui::ContextId::open() {
+@@ -379 +370,0 @@ void recompui::ContextId::open() {
 -    // Take ownership of the target context.
-@@ -395 +376 @@ void recompui::ContextId::close() {
+@@ -395 +386 @@ void recompui::ContextId::close() {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -400 +380,0 @@ void recompui::ContextId::close() {
+@@ -400 +390,0 @@ void recompui::ContextId::close() {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -405 +384,0 @@ void recompui::ContextId::close() {
+@@ -405 +394,0 @@ void recompui::ContextId::close() {
 -    // Release ownership of the target context.
-@@ -410 +388,0 @@ void recompui::ContextId::close() {
+@@ -410 +398,0 @@ void recompui::ContextId::close() {
 -    // Remove this context from the opened contexts.
-@@ -427 +405 @@ void recompui::ContextId::process_updates() {
+@@ -427 +415 @@ void recompui::ContextId::process_updates() {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -432 +409,0 @@ void recompui::ContextId::process_updates() {
+@@ -432 +419,0 @@ void recompui::ContextId::process_updates() {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -437,2 +413,0 @@ void recompui::ContextId::process_updates() {
+@@ -437,2 +423,0 @@ void recompui::ContextId::process_updates() {
 -    // Move the current update set into a local variable. This clears the update set
 -    // and allows it to be used to queue updates from any element callbacks.
-@@ -446 +420,0 @@ void recompui::ContextId::process_updates() {
+@@ -446 +430,0 @@ void recompui::ContextId::process_updates() {
 -        // Allow update events to the root document element.
-@@ -452 +425,0 @@ void recompui::ContextId::process_updates() {
+@@ -452 +435,0 @@ void recompui::ContextId::process_updates() {
 -        // Ignore any resources that aren't elements.
-@@ -454,2 +427 @@ void recompui::ContextId::process_updates() {
+@@ -454,2 +437 @@ void recompui::ContextId::process_updates() {
 -            // Assert to catch errors of queueing other resource types for update.
 -            // This isn't an actual error, so there's no issue with continuing in release builds.
 +
-@@ -460 +431,0 @@ void recompui::ContextId::process_updates() {
+@@ -460 +441,0 @@ void recompui::ContextId::process_updates() {
 -        // Get the resource being updaten from the context.
-@@ -463,2 +433,0 @@ void recompui::ContextId::process_updates() {
+@@ -463,2 +443,0 @@ void recompui::ContextId::process_updates() {
 -        // Make sure the resource exists before dispatching the event. It may have been deleted
 -        // after being queued for a update, so just continue to the next element if it doesn't exist.
-@@ -474 +442,0 @@ void recompui::ContextId::process_updates() {
+@@ -474 +452,0 @@ void recompui::ContextId::process_updates() {
 -    // Set the text of Rml elements that have pending text assignments.
-@@ -484 +451,0 @@ void recompui::ContextId::process_updates() {
+@@ -484 +461,0 @@ void recompui::ContextId::process_updates() {
 -        // Make sure the resource exists before setting its text, as it may have been deleted.
-@@ -489 +455,0 @@ void recompui::ContextId::process_updates() {
+@@ -489 +465,0 @@ void recompui::ContextId::process_updates() {
 -        // Perform the text update.
-@@ -514,0 +481,18 @@ bool recompui::ContextId::captures_mouse() {
+@@ -514,0 +491,18 @@ bool recompui::ContextId::captures_mouse() {
 +bool recompui::is_context_capturing_input() {
 +    return (context_state.input_capture.read() & 1U) != 0;
 +}
@@ -3159,80 +3236,80 @@ index e99229a..411a6b6 100644
 +    ctx->shown = shown;
 +}
 +
-@@ -521,0 +506,3 @@ void recompui::ContextId::set_captures_input(bool captures_input) {
+@@ -521,0 +516,3 @@ void recompui::ContextId::set_captures_input(bool captures_input) {
 +    context_state.input_capture.replace(ctx->shown && ctx->captures_input,
 +        ctx->shown && ctx->captures_mouse, ctx->shown && captures_input,
 +        ctx->shown && ctx->captures_mouse);
-@@ -531,0 +519,3 @@ void recompui::ContextId::set_captures_mouse(bool captures_mouse) {
+@@ -531,0 +529,3 @@ void recompui::ContextId::set_captures_mouse(bool captures_mouse) {
 +    context_state.input_capture.replace(ctx->shown && ctx->captures_input,
 +        ctx->shown && ctx->captures_mouse, ctx->shown && ctx->captures_input,
 +        ctx->shown && captures_mouse);
-@@ -536 +526 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
+@@ -536 +536 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -541 +530,0 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
+@@ -541 +540,0 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -546 +534,0 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
+@@ -546 +544,0 @@ recompui::ResourceId recompui::ContextId::create_resource_impl(bool is_element)
 -    // Create a dummy style pointer to get a key.
-@@ -556 +544 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
+@@ -556 +554 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -561 +548,0 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
+@@ -561 +558,0 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -569 +556 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
+@@ -569 +566 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
 -    
 +
-@@ -574 +560,0 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
+@@ -574 +570,0 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
 -    // Move the resource into the allocated slot.
-@@ -580 +566 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
+@@ -580 +576 @@ recompui::Style* recompui::ContextId::add_resource_impl(ResourceId rid, std::uni
 -        // Send one update to the element.
 +
-@@ -588 +574 @@ void recompui::ContextId::add_loose_element(Element* element) {
+@@ -588 +584 @@ void recompui::ContextId::add_loose_element(Element* element) {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -593 +578,0 @@ void recompui::ContextId::add_loose_element(Element* element) {
+@@ -593 +588,0 @@ void recompui::ContextId::add_loose_element(Element* element) {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -602 +587 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
+@@ -602 +597 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -607 +591,0 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
+@@ -607 +601,0 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -612 +595,0 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
+@@ -612 +605,0 @@ void recompui::ContextId::queue_element_update(ResourceId element) {
 -    // Check that the element that was specified is in the open context, or that it is the root document.
-@@ -622 +605 @@ void recompui::ContextId::queue_set_text(Element* element, std::string&& text) {
+@@ -622 +615 @@ void recompui::ContextId::queue_set_text(Element* element, std::string&& text) {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -627 +609,0 @@ void recompui::ContextId::queue_set_text(Element* element, std::string&& text) {
+@@ -627 +619,0 @@ void recompui::ContextId::queue_set_text(Element* element, std::string&& text) {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -651 +633 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
+@@ -651 +643 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -656 +637,0 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
+@@ -656 +647,0 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -661 +641,0 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
+@@ -661 +651,0 @@ void recompui::ContextId::destroy_resource(ResourceId resource) {
 -    // Try to remove the resource from the current context.
-@@ -669 +649 @@ void recompui::ContextId::clear_children() {
+@@ -669 +659 @@ void recompui::ContextId::clear_children() {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -674 +653,0 @@ void recompui::ContextId::clear_children() {
+@@ -674 +663,0 @@ void recompui::ContextId::clear_children() {
 -    // Check that the context that was specified is the same one that's currently open.
-@@ -679 +657,0 @@ void recompui::ContextId::clear_children() {
+@@ -679 +667,0 @@ void recompui::ContextId::clear_children() {
 -    // Remove the root element's children.
-@@ -682 +659,0 @@ void recompui::ContextId::clear_children() {
+@@ -682 +669,0 @@ void recompui::ContextId::clear_children() {
 -    // Remove any loose resources.
-@@ -718 +695 @@ recompui::Element* recompui::ContextId::get_autofocus_element() {
+@@ -718 +705 @@ recompui::Element* recompui::ContextId::get_autofocus_element() {
 -    
 +
-@@ -741 +718 @@ recompui::ContextId recompui::get_current_context() {
+@@ -741 +728 @@ recompui::ContextId recompui::get_current_context() {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -750 +727 @@ recompui::Style* get_resource_from_current_context(resource_slotmap::key key) {
+@@ -750 +737 @@ recompui::Style* get_resource_from_current_context(resource_slotmap::key key) {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -803 +780 @@ recompui::Element* recompui::ContextId::get_focused_element() {
+@@ -803 +790 @@ recompui::Element* recompui::ContextId::get_focused_element() {
 -    // Ensure a context is currently opened by this thread.
 +
-@@ -808 +784,0 @@ recompui::Element* recompui::ContextId::get_focused_element() {
+@@ -808 +794,0 @@ recompui::Element* recompui::ContextId::get_focused_element() {
 -    // Check that the context that was specified is the same one that's currently open.
 diff --git a/recompui/src/core/ui_context.h b/recompui/src/core/ui_context.h
 index 547d4cc..16e8bbb 100644
@@ -3945,33 +4022,70 @@ index a7954c7..602f8ae 100644
 -
 -// HD texture enable option. Must be an enum with two options.
 -// The first option is treated as disabled and the second option is treated as enabled.
+diff --git a/recompui/src/renderer/ui_image_layout.h b/recompui/src/renderer/ui_image_layout.h
+new file mode 100644
+index 0000000..9491858
+--- /dev/null
++++ b/recompui/src/renderer/ui_image_layout.h
+@@ -0,0 +1,22 @@
++#pragma once
++
++#include <cstdint>
++#include <limits>
++#include <stdexcept>
++
++namespace recompui {
++struct RGBA32Layout {
++    uint32_t row_bytes, padded_row_bytes, source_bytes, upload_bytes;
++};
++
++inline RGBA32Layout rgba32_layout(uint32_t width, uint32_t height) {
++    if (!width || !height || width > 16384 || height > 16384)
++        throw std::invalid_argument("UI image dimensions must be between 1 and 16384");
++    const uint64_t row = uint64_t(width) * 4;
++    const uint64_t padded_row = (row + 255) & ~uint64_t(255);
++    const uint64_t source = row * height, upload = padded_row * height;
++    if (source > UINT32_MAX || upload > UINT32_MAX)
++        throw std::length_error("UI image exceeds its upload extent");
++    return {uint32_t(row), uint32_t(padded_row), uint32_t(source), uint32_t(upload)};
++}
++}
 diff --git a/recompui/src/renderer/ui_renderer.cpp b/recompui/src/renderer/ui_renderer.cpp
-index 5ca5349..bfb5637 100644
+index 5ca5349..b40889c 100644
 --- a/recompui/src/renderer/ui_renderer.cpp
 +++ b/recompui/src/renderer/ui_renderer.cpp
-@@ -18 +17,0 @@
+@@ -7,0 +8,6 @@
++#include <algorithm>
++#include <cassert>
++#include <cstring>
++#include <exception>
++#include <limits>
++#include <stdexcept>
+@@ -16,0 +23 @@
++#include "ui_image_layout.h"
+@@ -18 +24,0 @@
 -// TODO: Forced game includes
-@@ -20 +19 @@
--// TODO: Forced game includes
-+
-@@ -24 +23 @@
--// TODO: Forced game includes
-+
-@@ -26 +25 @@
--// TODO: Forced game includes
-+
-@@ -29 +28 @@
--// TODO: Forced game includes
-+
-@@ -31 +30 @@
+@@ -20 +26 @@
 -// TODO: Forced game includes
 +
-@@ -56 +54,0 @@
+@@ -24 +30 @@
+-// TODO: Forced game includes
++
+@@ -26 +32 @@
+-// TODO: Forced game includes
++
+@@ -29 +35 @@
+-// TODO: Forced game includes
++
+@@ -31 +37 @@
+-// TODO: Forced game includes
++
+@@ -56 +61,0 @@
 -// TODO deduplicate from rt64_common.h
-@@ -87 +85 @@ struct ImageFromBytes {
+@@ -87 +92 @@ struct ImageFromBytes {
 -    // Dimensions only used for RGBA32 data. Files pull the size from the file data. 
 +
-@@ -127,2 +125,12 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
+@@ -127,2 +132,12 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
 -    std::unordered_map<Rml::TextureHandle, TextureHandle> textures_{};
 -    Rml::TextureHandle texture_count_ = 2; // Start at 1 to reserve texture 0 as the 1x1 pixel white texture
 +    std::unordered_map<Rml::TextureHandle, std::shared_ptr<TextureHandle>> textures_{};
@@ -3986,93 +4100,169 @@ index 5ca5349..bfb5637 100644
 +
 +    std::vector<PreparedDraw> prepared_draws_;
 +    Rml::TextureHandle texture_count_ = 2;
-@@ -146,2 +154 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
+@@ -146,2 +161 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
 -    std::unique_ptr<plume::RenderCommandQueue> copy_command_queue_{};
 -    std::unique_ptr<plume::RenderCommandList> copy_command_list_{};
 +    std::unique_ptr<RT64::RenderWorker> copy_worker_;
-@@ -149 +155,0 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
+@@ -149 +162,0 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
 -    std::unique_ptr<plume::RenderCommandFence> copy_command_fence_;
-@@ -164 +169,0 @@ public:
+@@ -160,0 +174 @@ public:
++        if (!interface || !device) throw std::invalid_argument("UI renderer has no graphics device");
+@@ -164 +177,0 @@ public:
 -        // Enable 4X MSAA if supported by the device.
-@@ -173 +177,0 @@ public:
+@@ -173 +185,0 @@ public:
 -        // Create the texture upload buffer, vertex buffer and index buffer
-@@ -178 +181,0 @@ public:
+@@ -178 +189,0 @@ public:
 -        // Describe the vertex format
-@@ -184 +186,0 @@ public:
+@@ -184 +194,0 @@ public:
 -        // Create a nearest sampler and a linear sampler
-@@ -198 +199,0 @@ public:
+@@ -196,0 +207 @@ public:
++        if (!nearestSampler_ || !linearSampler_) throw std::runtime_error("Cannot create UI samplers");
+@@ -198 +208,0 @@ public:
 -        // Create the shaders
-@@ -204,2 +204,0 @@ public:
+@@ -202,0 +213 @@ public:
++        if (!vertex_shader_ || !pixel_shader_) throw std::runtime_error("Cannot create UI shaders");
+@@ -204,2 +214,0 @@ public:
 -
 -        // Create the descriptor set that contains the sampler
-@@ -209 +208 @@ public:
+@@ -209 +218 @@ public:
 -        sampler_set_builder.addConstantBuffer(3, 1); // Workaround D3D12 crash due to an empty RT64 descriptor set
 +        sampler_set_builder.addConstantBuffer(3, 1);
-@@ -213 +211,0 @@ public:
+@@ -211,0 +221 @@ public:
++        if (!sampler_set_) throw std::runtime_error("Cannot create UI sampler descriptors");
+@@ -213 +222,0 @@ public:
 -        // Create a builder for the descriptor sets that will contain textures
-@@ -219 +216,0 @@ public:
+@@ -219 +227,0 @@ public:
 -        // Create the pipeline layout
-@@ -223 +220 @@ public:
+@@ -223 +231 @@ public:
 -        // Add the descriptor set for descriptors changed once per frame.
 +
-@@ -225 +222 @@ public:
+@@ -225 +233 @@ public:
 -        // Add the descriptor set for descriptors changed once per draw.
 +
-@@ -230 +226,0 @@ public:
+@@ -228,0 +237 @@ public:
++        if (!layout_) throw std::runtime_error("Cannot create UI pipeline layout");
+@@ -230 +238,0 @@ public:
 -        // Create the pipeline description
-@@ -232,4 +228 @@ public:
+@@ -232,4 +240 @@ public:
 -        // Set up alpha blending for non-premultiplied alpha. RmlUi recommends using premultiplied alpha normally,
 -        // but that would require preprocessing all input files, which would be difficult for user-provided content (such as mods).
 -        // This blending setup produces similar results as premultipled alpha but for normal assets as it multiplies during blending and
 -        // computes the output alpha value the same way that a premultipled alpha blender would.
 +
-@@ -245 +238 @@ public:
+@@ -245 +250 @@ public:
 -        pipeline_desc.renderTargetFormat[0] = SwapChainFormat; // TODO: Use whatever format the swap chain was created with.
 +        pipeline_desc.renderTargetFormat[0] = SwapChainFormat;
-@@ -263 +255,0 @@ public:
+@@ -257,0 +263 @@ public:
++        if (!pipeline_) throw std::runtime_error("Cannot create UI pipeline");
+@@ -261,0 +268 @@ public:
++            if (!pipeline_ms_) throw std::runtime_error("Cannot create multisampled UI pipeline");
+@@ -263 +269,0 @@ public:
 -            // Create the descriptor set for the screen drawer.
-@@ -267 +258,0 @@ public:
+@@ -265,0 +272 @@ public:
++            if (!screen_descriptor_set_) throw std::runtime_error("Cannot create UI screen descriptors");
+@@ -267 +273,0 @@ public:
 -            // Create vertex buffer for the screen drawer (full-screen triangle).
-@@ -278,3 +269,2 @@ public:
+@@ -269,0 +276 @@ public:
++            if (!screen_vertex_buffer_) throw std::runtime_error("Cannot create UI screen vertices");
+@@ -270,0 +278 @@ public:
++            if (!vertices) throw std::runtime_error("Cannot map UI screen vertices");
+@@ -278,3 +286,2 @@ public:
 -        copy_command_queue_ = device->createCommandQueue(plume::RenderCommandListType::COPY);
 -        copy_command_list_ = copy_command_queue_->createCommandList();
 -        copy_command_fence_ = device->createCommandFence();
 +        copy_worker_ = std::make_unique<RT64::RenderWorker>(
 +            device, "UI Texture Copy", plume::RenderCommandListType::COPY);
-@@ -296 +286 @@ public:
+@@ -284 +291,2 @@ public:
+-        assert(dynamic_buffer.mapped_data_ == nullptr);
++        if (dynamic_buffer.mapped_data_ || !dynamic_buffer.buffer_)
++            throw std::logic_error("UI upload buffer is not available for preparation");
+@@ -286,0 +295 @@ public:
++        if (!dynamic_buffer.mapped_data_) throw std::runtime_error("Cannot map UI upload buffer");
+@@ -290,2 +299 @@ public:
+-        assert(dynamic_buffer.mapped_data_ != nullptr);
+-        dynamic_buffer.buffer_->unmap();
++        if (!dynamic_buffer.mapped_data_) return;
+@@ -292,0 +301 @@ public:
++        dynamic_buffer.buffer_->unmap();
+@@ -296,12 +305,10 @@ public:
 -        // Unmap the buffer if it's mapped
-+
-@@ -300,2 +290 @@ public:
+-        if (dynamic_buffer.mapped_data_ != nullptr) {
+-            dynamic_buffer.buffer_->unmap();
+-        }
 -        
 -        // If there's already a buffer, move it into the stale buffers so it persists until the start of next frame.
-+
-@@ -306 +294,0 @@ public:
+-        if (dynamic_buffer.buffer_ != nullptr) {
+-            stale_buffers_.emplace_back(std::move(dynamic_buffer.buffer_));
+-        }
+-
 -        // Create the new buffer, update the size and map it.
-@@ -317 +305 @@ public:
--        // Check if there's enough remaining room in the buffer to allocate the requested bytes.
+-        dynamic_buffer.buffer_ = device_->createBuffer(plume::RenderBufferDesc::UploadBuffer(new_size, dynamic_buffer.flags_));
++        if (!new_size) throw std::invalid_argument("Empty UI upload allocation");
++        auto replacement = device_->createBuffer(plume::RenderBufferDesc::UploadBuffer(new_size, dynamic_buffer.flags_));
++        if (!replacement) throw std::runtime_error("Cannot allocate UI upload buffer");
 +
-@@ -321 +309 @@ public:
++        if (dynamic_buffer.buffer_) stale_buffers_.reserve(stale_buffers_.size() + 1);
++        end_dynamic_buffer(dynamic_buffer);
++        auto* mapped = map ? static_cast<uint8_t*>(replacement->map()) : nullptr;
++        if (map && !mapped) throw std::runtime_error("Cannot map replacement UI upload buffer");
++        if (dynamic_buffer.buffer_) stale_buffers_.emplace_back(std::move(dynamic_buffer.buffer_));
++        dynamic_buffer.buffer_ = std::move(replacement);
+@@ -310,4 +317 @@ public:
+-
+-        if (map) {
+-            dynamic_buffer.mapped_data_ = reinterpret_cast<uint8_t*>(dynamic_buffer.buffer_->map());
+-        }
++        dynamic_buffer.mapped_data_ = mapped;
+@@ -317,2 +321,4 @@ public:
+-        // Check if there's enough remaining room in the buffer to allocate the requested bytes.
+-        uint32_t total_bytes = num_bytes + dynamic_buffer.bytes_used_;
++
++        const uint64_t total = uint64_t(num_bytes) + dynamic_buffer.bytes_used_;
++        if (total > UINT32_MAX) throw std::length_error("UI geometry exceeds its upload extent");
++        const uint32_t total_bytes = uint32_t(total);
+@@ -321,2 +327,2 @@ public:
 -            // There isn't, so mark the current buffer as stale and allocate a new one with 50% more space than the required amount.
+-            resize_dynamic_buffer(dynamic_buffer, total_bytes + total_bytes / 2);
 +
-@@ -325 +312,0 @@ public:
++            resize_dynamic_buffer(dynamic_buffer, uint32_t(std::min<uint64_t>(UINT32_MAX, total + total / 2)));
+@@ -325 +330,0 @@ public:
 -        // Record the current end of the buffer to return.
-@@ -328 +314,0 @@ public:
+@@ -328 +332,0 @@ public:
 -        // Bump the buffer's end forward by the number of bytes allocated.
-@@ -335 +321 @@ public:
+@@ -335,2 +338,0 @@ public:
 -        // Check if there's enough remaining room in the buffer to allocate the requested bytes.
-+
-@@ -338 +323,0 @@ public:
+-        uint32_t total_bytes = num_bytes + dynamic_buffer.bytes_used_;
+@@ -338,2 +340,5 @@ public:
 -        // Determine the amount of padding needed to meet the target alignment.
-@@ -341 +325,0 @@ public:
+-        uint32_t padding_bytes = ((dynamic_buffer.bytes_used_ + alignment - 1) / alignment) * alignment - dynamic_buffer.bytes_used_;
++        if (!alignment) throw std::invalid_argument("Zero UI upload alignment");
++        const uint64_t total_bytes = uint64_t(num_bytes) + dynamic_buffer.bytes_used_;
++
++        const uint64_t padding_bytes = ((uint64_t(dynamic_buffer.bytes_used_) + alignment - 1) / alignment) * alignment - dynamic_buffer.bytes_used_;
++        if (total_bytes + padding_bytes > UINT32_MAX) throw std::length_error("Aligned UI upload exceeds its extent");
+@@ -341 +345,0 @@ public:
 -        // If there isn't enough room to allocate the required bytes plus the padding then resize the buffer and allocate from the start of the new one.
-@@ -350 +333,0 @@ public:
+@@ -343 +347 @@ public:
+-            resize_dynamic_buffer(dynamic_buffer, total_bytes + total_bytes / 2);
++            resize_dynamic_buffer(dynamic_buffer, uint32_t(std::min<uint64_t>(UINT32_MAX, total_bytes + total_bytes / 2)));
+@@ -350,2 +354 @@ public:
 -        // Otherwise allocate the padding and required bytes and offset the allocated position by the padding size.
-@@ -353 +336 @@ public:
+-        return allocate_dynamic_data(dynamic_buffer, padding_bytes + num_bytes) + padding_bytes;
++        return allocate_dynamic_data(dynamic_buffer, uint32_t(padding_bytes + num_bytes)) + uint32_t(padding_bytes);
+@@ -353 +356 @@ public:
 -    
 +
-@@ -369 +351,0 @@ public:
+@@ -354,0 +358,3 @@ public:
++        if (num_vertices < 0 || num_indices < 0 || (num_vertices && !vertices) || (num_indices && !indices) ||
++            uint64_t(num_vertices) * sizeof(*vertices) > UINT32_MAX || uint64_t(num_indices) * sizeof(*indices) > UINT32_MAX)
++            throw std::invalid_argument("Invalid UI geometry extent");
+@@ -365 +371 @@ public:
+-                assert(false && "Rendered without texture!");
++                throw std::runtime_error("UI draw has no live texture owner");
+@@ -369 +374,0 @@ public:
 -        // Copy the vertex and index data into the mapped buffers.
-@@ -377,34 +359,10 @@ public:
+@@ -377,34 +382,10 @@ public:
 -        list_->setViewports(plume::RenderViewport{ 0, 0, float(window_width_), float(window_height_) });
 -        if (scissor_enabled_) {
 -            list_->setScissors(plume::RenderRect{
@@ -4117,28 +4307,35 @@ index 5ca5349..bfb5637 100644
 +            plume::RenderVertexBufferView{vertex_buffer_.buffer_->at(vertex_buffer_offset), vert_size_bytes},
 +            scissor, textures_.at(texture), RmlPushConstants{mvp_, translation},
 +            static_cast<uint32_t>(num_indices)});
-@@ -429 +387 @@ public:
+@@ -429 +410 @@ public:
 -            // Return a transparent texture if the image can't be found.
 +
-@@ -435 +393 @@ public:
+@@ -435,2 +416,2 @@ public:
 -        
+-        RT64::Texture* texture = nullptr;
 +
-@@ -439 +397 @@ public:
++        std::unique_ptr<RT64::Texture> texture;
+@@ -439 +420 @@ public:
 -        copy_command_list_->begin();
 +        copy_worker_->commandList->begin();
-@@ -444 +402 @@ public:
+@@ -444,5 +425,5 @@ public:
 -                    // Read the image header (two 32-bit values for width and height respectively).
-+
-@@ -448 +406 @@ public:
+-                    uint32_t rowPitch = img.width * 4;
+-                    size_t byteCount = img.height * rowPitch;
+-                    texture = new RT64::Texture();
 -                    RT64::TextureCache::setRGBA32(texture, device_, copy_command_list_.get(), reinterpret_cast<const uint8_t*>(img.bytes.data()), byteCount, img.width, img.height, rowPitch, texture_buffer, nullptr);
-+                    RT64::TextureCache::setRGBA32(texture, device_, copy_worker_->commandList.get(), reinterpret_cast<const uint8_t*>(img.bytes.data()), byteCount, img.width, img.height, rowPitch, texture_buffer, nullptr);
-@@ -453 +411 @@ public:
++
++                    const auto layout = rgba32_layout(img.width, img.height);
++                    if (img.bytes.size() != layout.source_bytes) throw std::invalid_argument("UI RGBA image byte count disagrees with its dimensions");
++                    texture = std::make_unique<RT64::Texture>();
++                    RT64::TextureCache::setRGBA32(texture.get(), device_, copy_worker_->commandList.get(), reinterpret_cast<const uint8_t*>(img.bytes.data()), layout.source_bytes, img.width, img.height, layout.row_bytes, texture_buffer, nullptr);
+@@ -453 +434 @@ public:
 -                    // TODO: This data copy can be avoided when RT64::TextureCache::loadTextureFromBytes's function is updated to only take a pointer and size as the input.
 +
-@@ -455 +413 @@ public:
+@@ -455 +436 @@ public:
 -                    texture = RT64::TextureCache::loadTextureFromBytes(device_, copy_command_list_.get(), data_copy, texture_buffer);
-+                    texture = RT64::TextureCache::loadTextureFromBytes(device_, copy_worker_->commandList.get(), data_copy, texture_buffer);
-@@ -459,4 +417,4 @@ public:
++                    texture.reset(RT64::TextureCache::loadTextureFromBytes(device_, copy_worker_->commandList.get(), data_copy, texture_buffer));
+@@ -459,4 +440,4 @@ public:
 -        
 -        copy_command_list_->end();
 -        copy_command_queue_->executeCommandLists(copy_command_list_.get(), copy_command_fence_.get());
@@ -4147,62 +4344,102 @@ index 5ca5349..bfb5637 100644
 +        copy_worker_->commandList->end();
 +        copy_worker_->execute();
 +        copy_worker_->wait();
-@@ -474 +432 @@ public:
+@@ -472,0 +454 @@ public:
++        if (!set) throw std::runtime_error("Cannot create UI image descriptors");
+@@ -474,2 +456 @@ public:
 -        textures_.emplace(texture_handle, TextureHandle{ std::move(texture->texture), std::move(set), false });
+-        delete texture;
 +        textures_.emplace(texture_handle, std::make_shared<TextureHandle>(TextureHandle{ std::move(texture->texture), std::move(set), false }));
-@@ -497 +454,0 @@ public:
+@@ -490,0 +472,2 @@ public:
++        if (!source) throw std::invalid_argument("UI texture has no pixel data");
++        const auto layout = rgba32_layout(uint32_t(source_dimensions.x), uint32_t(source_dimensions.y));
+@@ -495 +478 @@ public:
+-            uint32_t image_size_bytes = source_dimensions.x * source_dimensions.y * RmlTextureFormatBytesPerPixel;
++            const uint32_t image_size_bytes = layout.source_bytes;
+@@ -497,4 +480,3 @@ public:
 -            // Calculate the texture padding for alignment purposes.
-@@ -503 +459,0 @@ public:
+-            uint32_t row_pitch = source_dimensions.x * RmlTextureFormatBytesPerPixel;
+-            uint32_t row_byte_width, row_byte_padding;
+-            CalculateTextureRowWidthPadding(row_pitch, row_byte_width, row_byte_padding);
++            const uint32_t row_pitch = layout.row_bytes;
++            const uint32_t row_byte_width = layout.padded_row_bytes;
++            const uint32_t row_byte_padding = row_byte_width - row_pitch;
+@@ -503,2 +485 @@ public:
 -            // Calculate the real number of bytes to upload including padding.
-@@ -506 +461,0 @@ public:
+-            uint32_t uploaded_size_bytes = row_byte_width * source_dimensions.y;
++            const uint32_t uploaded_size_bytes = layout.upload_bytes;
+@@ -506 +486,0 @@ public:
 -            // Allocate room in the upload buffer for the uploaded data.
-@@ -512 +466,0 @@ public:
+@@ -508,2 +488,5 @@ public:
+-                copy_buffer_size_ = (uploaded_size_bytes * 3) / 2;
+-                copy_buffer_ = device_->createBuffer(plume::RenderBufferDesc::UploadBuffer(copy_buffer_size_));
++                const uint64_t replacement_size = uint64_t(uploaded_size_bytes) * 3 / 2;
++                auto replacement = device_->createBuffer(plume::RenderBufferDesc::UploadBuffer(replacement_size));
++                if (!replacement) throw std::runtime_error("Cannot allocate UI texture upload");
++                copy_buffer_ = std::move(replacement);
++                copy_buffer_size_ = replacement_size;
+@@ -512 +494,0 @@ public:
 -            // Copy the source data into the upload buffer.
-@@ -515 +469 @@ public:
+@@ -513,0 +496 @@ public:
++            if (!dst_data) throw std::runtime_error("Cannot map UI texture upload");
+@@ -515 +498 @@ public:
 -                // Copy row-by-row if the image is flipped.
 +
-@@ -521 +475 @@ public:
+@@ -521 +504 @@ public:
 -                // Directly copy if no padding is needed and the image isn't flipped.
 +
-@@ -526 +480 @@ public:
+@@ -526,4 +508,0 @@ public:
 -            // Otherwise pad each row as necessary.
-+
-@@ -540,2 +494 @@ public:
+-            else {
+-                const Rml::byte *src_data = flip_y ? source + row_pitch * (source_dimensions.y - 1) : source;
+-                uint32_t src_stride = flip_y ? -row_pitch : row_pitch;
+@@ -530,0 +510 @@ public:
++            else {
+@@ -532,3 +512,2 @@ public:
+-                    memcpy(dst_data, src_data, row_pitch);
+-                    src_data += src_stride;
+-                    dst_data += row_byte_width;
++                    const int source_row = flip_y ? source_dimensions.y - row - 1 : row;
++                    memcpy(dst_data + size_t(row) * row_byte_width, source + size_t(source_row) * row_pitch, row_pitch);
+@@ -540,2 +519,3 @@ public:
 -            // Reset the command list.
 -            copy_command_list_->begin();
 +            copy_worker_->commandList->begin();
-@@ -543,5 +496,3 @@ public:
++
++            copy_worker_->commandList->barriers(plume::RenderBarrierStage::COPY, plume::RenderTextureBarrier(texture.get(), plume::RenderTextureLayout::COPY_DEST));
+@@ -543,5 +523 @@ public:
 -            // Prepare the texture to be a destination for copying.
 -            copy_command_list_->barriers(plume::RenderBarrierStage::COPY, plume::RenderTextureBarrier(texture.get(), plume::RenderTextureLayout::COPY_DEST));
 -            
 -            // Copy the upload buffer into the texture.
 -            copy_command_list_->copyTextureRegion(
-+            copy_worker_->commandList->barriers(plume::RenderBarrierStage::COPY, plume::RenderTextureBarrier(texture.get(), plume::RenderTextureLayout::COPY_DEST));
-+
 +            copy_worker_->commandList->copyTextureRegion(
-@@ -550,5 +500,0 @@ public:
+@@ -550,5 +525,0 @@ public:
 -            
 -            // End the command list, execute it and wait.
 -            copy_command_list_->end();
 -            copy_command_queue_->executeCommandLists(copy_command_list_.get(), copy_command_fence_.get());
 -            copy_command_queue_->waitForCommandFence(copy_command_fence_.get());
-@@ -556 +502,4 @@ public:
+@@ -556 +527,4 @@ public:
 -            // Create a descriptor set with this texture in it.
 +            copy_worker_->commandList->end();
 +            copy_worker_->execute();
 +            copy_worker_->wait();
 +
-@@ -561 +510 @@ public:
+@@ -557,0 +532 @@ public:
++            if (!set) throw std::runtime_error("Cannot create generated UI texture descriptors");
+@@ -561 +536 @@ public:
 -            textures_.emplace(texture_handle, TextureHandle{ std::move(texture), std::move(set), false });
 +            textures_.emplace(texture_handle, std::make_shared<TextureHandle>(TextureHandle{ std::move(texture), std::move(set), false }));
-@@ -571 +520 @@ public:
+@@ -571 +546 @@ public:
 -            // Textures #0 and #1 are reserved and should never be released.
 +
-@@ -585,2 +534 @@ public:
+@@ -585,2 +560,2 @@ public:
 -    void start(plume::RenderCommandList* list, int image_width, int image_height) {
 -        list_ = list;
 +    void prepare(int image_width, int image_height) {
-@@ -588,14 +536,10 @@ public:
++        rgba32_layout(uint32_t(image_width), uint32_t(image_height));
+@@ -588,14 +563,17 @@ public:
 -        if (multisampling_.sampleCount > 1) {
 -            if (window_width_ != image_width || window_height_ != image_height) {
 -                screen_framebuffer_.reset();
@@ -4221,43 +4458,70 @@ index 5ca5349..bfb5637 100644
 +        stale_buffers_.clear();
 +        if (multisampling_.sampleCount > 1 &&
 +            (window_width_ != image_width || window_height_ != image_height)) {
-+            screen_framebuffer_.reset();
-+            screen_texture_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, SwapChainFormat));
-+            screen_texture_ms_ = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, SwapChainFormat, multisampling_));
-+            const plume::RenderTexture *color_attachment = screen_texture_ms_.get();
-+            screen_framebuffer_ = device_->createFramebuffer(plume::RenderFramebufferDesc(&color_attachment, 1));
-+            screen_descriptor_set_->setTexture(0, screen_texture_.get(), plume::RenderTextureLayout::SHADER_READ);
-@@ -603,5 +546,0 @@ public:
++            auto texture = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, SwapChainFormat));
++            auto multisampled = device_->createTexture(plume::RenderTextureDesc::ColorTarget(image_width, image_height, SwapChainFormat, multisampling_));
++            if (!texture || !multisampled) throw std::runtime_error("Cannot allocate UI screen targets");
++            const plume::RenderTexture *color_attachment = multisampled.get();
++            auto framebuffer = device_->createFramebuffer(plume::RenderFramebufferDesc(&color_attachment, 1));
++            plume::RenderDescriptorRange range(plume::RenderDescriptorRangeType::TEXTURE, 2, 1);
++            auto descriptors = device_->createDescriptorSet(plume::RenderDescriptorSetDesc(&range, 1));
++            if (!framebuffer || !descriptors) throw std::runtime_error("Cannot create UI screen views");
++            descriptors->setTexture(0, texture.get(), plume::RenderTextureLayout::SHADER_READ);
++            screen_framebuffer_ = std::move(framebuffer);
++            screen_descriptor_set_ = std::move(descriptors);
++            screen_texture_ = std::move(texture);
++            screen_texture_ms_ = std::move(multisampled);
+@@ -603,5 +580,0 @@ public:
 -
 -        list_->setGraphicsPipelineLayout(layout_.get());
 -        // Bind the set for descriptors that don't change across draws
 -        list_->setGraphicsDescriptorSet(sampler_set_.get(), 0);
 -
-@@ -610 +548,0 @@ public:
+@@ -610 +582,0 @@ public:
 -
-@@ -613,6 +550,0 @@ public:
--
+@@ -612,0 +585,10 @@ public:
++        try {
++            reset_dynamic_buffer(upload_buffer_);
++            reset_dynamic_buffer(vertex_buffer_);
++            reset_dynamic_buffer(index_buffer_);
++        } catch (...) {
++            try { finish_prepare(); }
++            catch (const std::exception& e) { std::fprintf(stderr, "UI preparation cleanup failed: %s\n", e.what()); }
++            throw;
++        }
++    }
+@@ -614,8 +596,15 @@ public:
 -        // The following code assumes command lists aren't double buffered.
 -        // Clear out any stale buffers from the last command list.
 -        stale_buffers_.clear();
 -
 -        // Reset buffers.
-@@ -621,0 +554,7 @@ public:
-+    }
-+
+-        reset_dynamic_buffer(upload_buffer_);
+-        reset_dynamic_buffer(vertex_buffer_);
+-        reset_dynamic_buffer(index_buffer_);
 +    void finish_prepare() {
-+        end_dynamic_buffer(upload_buffer_);
-+        end_dynamic_buffer(vertex_buffer_);
-+        end_dynamic_buffer(index_buffer_);
++        std::exception_ptr failure;
++        for (auto* buffer : {&upload_buffer_, &vertex_buffer_, &index_buffer_}) {
++            try { end_dynamic_buffer(*buffer); }
++            catch (const std::exception& e) {
++                if (!failure) failure = std::current_exception();
++                else std::fprintf(stderr, "Additional UI upload cleanup failure: %s\n", e.what());
++            }
++            catch (...) {
++                if (!failure) failure = std::current_exception();
++                else std::fputs("Additional non-standard UI upload cleanup failure\n", stderr);
++            }
++        }
++        if (failure) std::rethrow_exception(failure);
 +    }
-@@ -623 +562,5 @@ public:
+@@ -623 +612,5 @@ public:
 -        // Set an internal texture as the render target if MSAA is enabled.
 +    void draw(plume::RenderCommandList* list, plume::RenderFramebuffer* framebuffer) {
 +        list_ = list;
 +        list->setPipeline(multisampling_.sampleCount > 1 ? pipeline_ms_.get() : pipeline_.get());
 +        list->setGraphicsPipelineLayout(layout_.get());
 +        list->setGraphicsDescriptorSet(sampler_set_.get(), 0);
-@@ -628,0 +572,16 @@ public:
+@@ -628,0 +622,16 @@ public:
 +        list->setViewports(plume::RenderViewport{0, 0, float(window_width_), float(window_height_)});
 +        for (const PreparedDraw& draw : prepared_draws_) {
 +            list->setScissors(draw.scissor);
@@ -4274,25 +4538,39 @@ index 5ca5349..bfb5637 100644
 +            list->drawIndexedInstanced(draw.index_count, 1, 0, 0, 0);
 +        }
 +        end(list, framebuffer);
-@@ -632 +591 @@ public:
+@@ -632 +641 @@ public:
 -        // Draw the texture were rendered the UI in to the swap chain framebuffer if MSAA is enabled.
 +
-@@ -660,4 +618,0 @@ public:
+@@ -660,4 +668,0 @@ public:
 -        end_dynamic_buffer(upload_buffer_);
 -        end_dynamic_buffer(vertex_buffer_);
 -        end_dynamic_buffer(index_buffer_);
 -
-@@ -668 +623 @@ public:
+@@ -668 +673 @@ public:
 -        // Width and height aren't used for file images, so set them to 0.
 +
-@@ -679,2 +634 @@ public:
+@@ -672,0 +678,2 @@ public:
++        if (bytes.size() != rgba32_layout(width, height).source_bytes)
++            throw std::invalid_argument("UI RGBA image byte count disagrees with its dimensions");
+@@ -679,2 +686 @@ public:
 -            // We can move the name into the map since the name in the actual entry is no longer needed.
 -            // After that, move the entry itself into the map.
 +
-@@ -685 +639 @@ public:
+@@ -683,0 +690,5 @@ public:
++    void release_image(const std::string& src) {
++
++        flush_image_from_bytes_queue();
++        image_from_bytes_map.erase(src);
++    }
+@@ -685 +696 @@ public:
 -} // namespace recompui
 +}
-@@ -705,4 +659,3 @@ Rml::RenderInterface* recompui::RmlRenderInterface_RT64::get_rml_interface() {
+@@ -694,2 +705,2 @@ void recompui::RmlRenderInterface_RT64::reset() {
+-void recompui::RmlRenderInterface_RT64::init(plume::RenderInterface* interface, plume::RenderDevice* device) {
+-    impl = std::make_unique<RmlRenderInterface_RT64_impl>(interface, device);
++void recompui::RmlRenderInterface_RT64::init(plume::RenderInterface* render_interface, plume::RenderDevice* device) {
++    impl = std::make_unique<RmlRenderInterface_RT64_impl>(render_interface, device);
+@@ -705,4 +716,3 @@ Rml::RenderInterface* recompui::RmlRenderInterface_RT64::get_rml_interface() {
 -void recompui::RmlRenderInterface_RT64::start(plume::RenderCommandList* list, int image_width, int image_height) {
 -    assert(static_cast<bool>(impl));
 -
@@ -4300,23 +4578,40 @@ index 5ca5349..bfb5637 100644
 +void recompui::RmlRenderInterface_RT64::prepare(int width, int height) {
 +    assert(impl);
 +    impl->prepare(width, height);
-@@ -711,2 +664,4 @@ void recompui::RmlRenderInterface_RT64::start(plume::RenderCommandList* list, in
+@@ -711,2 +721,4 @@ void recompui::RmlRenderInterface_RT64::start(plume::RenderCommandList* list, in
 -void recompui::RmlRenderInterface_RT64::end(plume::RenderCommandList* list, plume::RenderFramebuffer* framebuffer) {
 -    assert(static_cast<bool>(impl));
 +void recompui::RmlRenderInterface_RT64::finish_prepare() {
 +    assert(impl);
 +    impl->finish_prepare();
 +}
-@@ -714 +669,3 @@ void recompui::RmlRenderInterface_RT64::end(plume::RenderCommandList* list, plum
+@@ -714 +726,3 @@ void recompui::RmlRenderInterface_RT64::end(plume::RenderCommandList* list, plum
 -    impl->end(list, framebuffer);
 +void recompui::RmlRenderInterface_RT64::draw(plume::RenderCommandList* list, plume::RenderFramebuffer* framebuffer) {
 +    assert(impl);
 +    impl->draw(list, framebuffer);
+@@ -727,0 +742,5 @@ void recompui::RmlRenderInterface_RT64::queue_image_from_bytes_rgba32(const std:
++
++void recompui::RmlRenderInterface_RT64::release_image(const std::string& src) {
++    if (!impl) throw std::logic_error("UI image release has no renderer owner");
++    impl->release_image(src);
++}
 diff --git a/recompui/src/renderer/ui_renderer.h b/recompui/src/renderer/ui_renderer.h
-index 99912a3..1514619 100644
+index 99912a3..21c94e5 100644
 --- a/recompui/src/renderer/ui_renderer.h
 +++ b/recompui/src/renderer/ui_renderer.h
-@@ -30,3 +30,4 @@ namespace recompui {
+@@ -5 +5,3 @@
+-#include "recompui.h"
++#include <cstdint>
++#include <string>
++#include <vector>
+@@ -7 +9 @@
+-namespace RT64 {
++namespace plume {
+@@ -28 +30 @@ namespace recompui {
+-        void init(plume::RenderInterface* interface, plume::RenderDevice* device);
++        void init(plume::RenderInterface* render_interface, plume::RenderDevice* device);
+@@ -30,3 +32,4 @@ namespace recompui {
 -        
 -        void start(plume::RenderCommandList* list, int image_width, int image_height);
 -        void end(plume::RenderCommandList* list, plume::RenderFramebuffer* framebuffer);
@@ -4324,7 +4619,9 @@ index 99912a3..1514619 100644
 +        void prepare(int image_width, int image_height);
 +        void finish_prepare();
 +        void draw(plume::RenderCommandList* list, plume::RenderFramebuffer* framebuffer);
-@@ -36 +37 @@ namespace recompui {
+@@ -34,0 +38 @@ namespace recompui {
++        void release_image(const std::string& src);
+@@ -36 +40 @@ namespace recompui {
 -} // namespace recompui
 +}
 diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp

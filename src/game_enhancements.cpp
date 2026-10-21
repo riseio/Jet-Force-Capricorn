@@ -1,4 +1,5 @@
 #include "camera_ownership.hpp"
+#include "cpu_framebuffer_effects.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -77,9 +78,17 @@ struct AtomicAim {
     std::atomic<float> stick_y{0.0f};
     std::atomic<float> mouse_x{0.0f};
     std::atomic<float> mouse_y{0.0f};
+    std::atomic<float> pending_mouse_x{0.0f};
+    std::atomic<float> pending_mouse_y{0.0f};
 };
 
 std::array<AtomicAim, 4> aims;
+void discard_mouse_counts(size_t index) {
+    aims[index].pending_mouse_x.store(0,std::memory_order_relaxed);
+    aims[index].pending_mouse_y.store(0,std::memory_order_relaxed);
+    aims[index].mouse_x.store(0,std::memory_order_relaxed);
+    aims[index].mouse_y.store(0,std::memory_order_relaxed);
+}
 std::array<std::atomic<uint16_t>, 4> routed_movement_buttons{};
 std::array<std::atomic<uint16_t>, 4> sampled_direct_action_buttons{};
 std::array<std::atomic<uint16_t>, 4> routed_direct_action_buttons{};
@@ -102,6 +111,7 @@ thread_local uint32_t sprite_owner = 0;
 thread_local bool sequence_skip_pending = false;
 thread_local bool object_skip_pending = false;
 thread_local bool target_reticle_visible = true;
+thread_local bool target_reticle_interpolation = false;
 struct HudNumberFilterScope {
     int32_t prior = 0;
     bool active = false;
@@ -448,13 +458,13 @@ DirectLookAngles modern_direct_look_angles(
         horizontal_mouse,
         elapsed_vi,
         horizontal,
-        false);
+        false,scope_scale);
     const int32_t pitch_delta = jfc::modern_input::direct_look_angle_delta(
         vertical_stick,
         vertical_mouse,
         elapsed_vi,
         vertical,
-        true);
+        true,scope_scale);
     return {
         static_cast<int16_t>(static_cast<uint16_t>(yaw_before) +
             static_cast<uint16_t>(yaw_delta)),
@@ -589,6 +599,13 @@ void install_modern_player_input(uint8_t* rdram, size_t index) {
 
     scope.input = capture_native_input(rdram);
     active_modern_input_controller = static_cast<int>(index);
+
+    const float mouse_x = aims[index].pending_mouse_x.exchange(0, std::memory_order_relaxed);
+    const float mouse_y = aims[index].pending_mouse_y.exchange(0, std::memory_order_relaxed);
+    aims[index].mouse_x.store(mouse_x, std::memory_order_relaxed);
+    aims[index].mouse_y.store(mouse_y, std::memory_order_relaxed);
+    aims[index].x.store(std::clamp(aims[index].stick_x.load(std::memory_order_relaxed)*80 + mouse_x,-80.0f,80.0f),std::memory_order_relaxed);
+    aims[index].y.store(std::clamp(aims[index].stick_y.load(std::memory_order_relaxed)*80 + mouse_y,-80.0f,80.0f),std::memory_order_relaxed);
 
     uint32_t native_held = scope.input.keys;
     uint32_t native_pressed = scope.input.pressed;
@@ -915,6 +932,7 @@ uint32_t graphics_task_framebuffer(uint8_t* rdram, uint32_t task) {
 }
 
 void set_modern_controls(bool enabled) {
+    clear_mouse_aim();
     modern_controls.store(enabled, std::memory_order_relaxed);
     modern_controls_revision.fetch_add(1, std::memory_order_relaxed);
     for (auto& buttons : routed_movement_buttons) {
@@ -1037,8 +1055,12 @@ void sample_aim(
     aims[controller].y.store(aim.y, std::memory_order_relaxed);
     aims[controller].stick_x.store(stick_x, std::memory_order_relaxed);
     aims[controller].stick_y.store(stick_y, std::memory_order_relaxed);
-    aims[controller].mouse_x.store(mouse_x * gain, std::memory_order_relaxed);
-    aims[controller].mouse_y.store(mouse_y * gain, std::memory_order_relaxed);
+    aims[controller].pending_mouse_x.fetch_add(mouse_x * gain, std::memory_order_relaxed);
+    aims[controller].pending_mouse_y.fetch_add(mouse_y * gain, std::memory_order_relaxed);
+}
+
+void clear_mouse_aim() {
+    for (size_t i=0;i<aims.size();++i) discard_mouse_counts(i);
 }
 
 }
@@ -1508,6 +1530,7 @@ extern "C" void jfc_publish_native_frame_time(uint8_t* rdram) {
         std::exit(EXIT_FAILURE);
     }
     ultramodern::set_audio_activity(jfc::modernization::audio_activity(rdram));
+    jfc::framebuffer_effects::begin_frame(rdram);
 
     std::lock_guard lock(camera_samples_mutex);
     camera_samples[size_t(MEM_W(0, 0x800FD7C0U))].clear();
@@ -1601,7 +1624,8 @@ void jfc::enhancements::set_output_aspect_ratio(float aspect_ratio) {
     const float valid_aspect = std::isfinite(aspect_ratio) && aspect_ratio > 0.0f
         ? aspect_ratio
         : 4.0f / 3.0f;
-    output_aspect_ratio.store(valid_aspect, std::memory_order_relaxed);
+    if (output_aspect_ratio.exchange(valid_aspect, std::memory_order_relaxed) != valid_aspect)
+        jfc::framebuffer_effects::invalidate_cursor();
 }
 
 extern "C" float jfc_culling_horizontal_tangent(uint8_t* rdram) {
@@ -2149,6 +2173,7 @@ extern "C" void jfc_route_modern_input(uint8_t* rdram, recomp_context* ctx) {
         pending_scope.native_input_lockout &&
         valid_rdram_address(pending_scope.owner, 0x5C4U) &&
         MEM_B(0, pending_scope.owner) == static_cast<int>(controller)) {
+        discard_mouse_counts(controller);
 
         const uint16_t sampled = sampled_direct_action_buttons[controller].load(
             std::memory_order_relaxed);
@@ -2300,6 +2325,7 @@ extern "C" void jfc_begin_modern_player_control(
     if (!modern_controls.load(std::memory_order_relaxed) ||
         MEM_W(0, gameplay_mode_address) != 0 ||
         !modern_attached_camera_eligible(rdram, player)) {
+        discard_mouse_counts(index);
         routed_movement_buttons[index].store(0, std::memory_order_relaxed);
         routed_direct_action_buttons[index].store(0, std::memory_order_relaxed);
         set_expert_action_bindings(rdram, false);
@@ -3145,6 +3171,17 @@ extern "C" void jfc_suppress_modern_level_camera(
     ctx->r2 = 0;
 }
 
+extern "C" float jfc_modern_aim_response(uint8_t* rdram, uint32_t player, float authored) {
+    const auto* scope = active_scope_for_player(rdram,player);
+    if (!scope || !scope->input.active || !boss_control_owns_aim(rdram,player)) return authored;
+    const unsigned controller=MEM_BU(0,player);
+    if (controller>=aims.size() || (aims[controller].mouse_x.load(std::memory_order_relaxed)==0 &&
+        aims[controller].mouse_y.load(std::memory_order_relaxed)==0)) return authored;
+    if (!std::isfinite(authored) || authored<0 || authored>1)
+        throw std::runtime_error("Invalid native boss aim response gain");
+    return 1.0f;
+}
+
 extern "C" void jfc_select_modern_attached_camera(
     uint8_t* rdram,
     recomp_context* ctx
@@ -3162,6 +3199,7 @@ extern "C" void jfc_prepare_target_reticle(
     uint8_t* rdram,
     recomp_context* ctx
 ) {
+    target_reticle_interpolation = false;
     if (!modern_controls.load(std::memory_order_relaxed)) {
         target_reticle_visible = true;
         return;
@@ -3172,6 +3210,7 @@ extern "C" void jfc_prepare_target_reticle(
         return;
     }
     const int controller = MEM_B(0, player);
+    target_reticle_interpolation = controller == 0 && MEM_W(0, gameplay_mode_address) == 0;
     target_reticle_visible = boss_control_owns_aim(rdram, player) || controller < 0 ||
         static_cast<size_t>(controller) >= physical_aim_buttons.size() ||
         physical_aim_buttons[controller].load(std::memory_order_relaxed);
@@ -3179,6 +3218,10 @@ extern "C" void jfc_prepare_target_reticle(
 
 extern "C" int jfc_should_draw_target_reticle() {
     return target_reticle_visible ? 1 : 0;
+}
+
+extern "C" int jfc_should_interpolate_target_reticle() {
+    return target_reticle_interpolation && modern_controls.load(std::memory_order_relaxed) ? 1 : 0;
 }
 
 extern "C" void jfc_adjust_projection(uint8_t* rdram, recomp_context* ctx) {
@@ -3471,6 +3514,8 @@ void jfc::state::PreparedEnhancements::commit() noexcept {
     if (impl->committed) std::terminate();
 
     jfc_invalidate_hud_metadata();
+    jfc::enhancements::clear_mouse_aim();
+    jfc::framebuffer_effects::invalidate_cursor();
 #define RESTORE_FIELD(name) ::name = impl->name;
     JFC_ENHANCEMENT_STATE_FIELDS(RESTORE_FIELD)
 #undef RESTORE_FIELD

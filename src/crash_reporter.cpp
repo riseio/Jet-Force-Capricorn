@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <csignal>
 #include <exception>
 #include <filesystem>
 #include <stdexcept>
@@ -229,16 +230,35 @@ static void report_terminating_exception() noexcept {
     std::fflush(stderr);
 }
 
+#ifdef _WIN32
+[[noreturn]] static void abort_handler(int) noexcept {
+
+    static std::atomic_flag reporting = ATOMIC_FLAG_INIT;
+    if (!reporting.test_and_set(std::memory_order_relaxed)) {
+        report_terminating_exception();
+        CONTEXT context{};
+        RtlCaptureContext(&context);
+        EXCEPTION_RECORD record{};
+        record.ExceptionCode = 0xE0004A46U;
+        record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+        record.ExceptionAddress = reinterpret_cast<void*>(context.Rip);
+        EXCEPTION_POINTERS exception{&record, &context};
+        write_windows_report(&exception);
+        TerminateProcess(GetCurrentProcess(), record.ExceptionCode);
+        std::_Exit(EXIT_FAILURE);
+    }
+
+    for (;;) Sleep(INFINITE);
+}
+#endif
+
 void install(const std::filesystem::path& app_folder) {
 #ifdef _WIN32
     report_path = (app_folder / "crash-last.txt").wstring();
     dump_path = (app_folder / "crash-last.dmp").wstring();
     SetUnhandledExceptionFilter(&unhandled_exception_filter);
-    std::set_terminate([]() noexcept {
-        report_terminating_exception();
-        RaiseException(0xE0004A46U, EXCEPTION_NONCONTINUABLE, 0, nullptr);
-        std::abort();
-    });
+    if (std::signal(SIGABRT, &abort_handler) == SIG_ERR)
+        throw std::runtime_error("Failed to install fatal worker exception handler");
 #else
     const std::string path = (app_folder / "crash-last.txt").string();
     if (path.size() >= report_path.size()) {

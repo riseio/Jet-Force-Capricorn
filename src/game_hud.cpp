@@ -218,9 +218,10 @@ public:
         }
         return counter_column_width = width;
     }
-    void text(int x, int centre_y, const char* value, TextAlign align = TextAlign::Left) {
+    void text(int x, int centre_y, const char* value, TextAlign align = TextAlign::Left,
+              uint32_t color = 0x80FFC0U) {
         prepare_text(value);
-        call.r4 = 128; call.r5 = 255; call.r6 = 192; call.r7 = 255;
+        call.r4 = (color >> 16) & 255; call.r5 = (color >> 8) & 255; call.r6 = color & 255; call.r7 = 255;
         MEM_W(0x10, call.r29) = 255;
         fontColour(rdram, &call);
         call.r4 = display_list; call.r5 = x; call.r6 = centre_y; call.r7 = text_address;
@@ -453,13 +454,18 @@ extern "C" void jfc_draw_boss_health(uint8_t* rdram, recomp_context* ctx) {
     const auto target = jfc::boss::current_target(rdram,uint32_t(ctx->r17));
     if (!target.name) return;
     NativeHudDraw draw(rdram,*ctx,false,false,true,true);
-    const auto color = target.destroyed ? 0x606870U : target.vulnerable ? 0x65ED96U : 0xD5A34AU;
-    if (target.maximum > 0) {
-        draw.box(110,27,100,5,0x343C44);
-        draw.box(110,27,(100*target.remaining+target.maximum-1)/target.maximum,5,color);
+    const auto color = target.destroyed ? 0x9098A0U : target.vulnerable ? 0x99DDE8U : 0xFFD34EU;
+    draw.text(160,15,target.name,TextAlign::Center,0xE8F0F0U);
+    const char* status = target.destroyed ? "TARGET CLEARED" : target.vulnerable ? "WEAK POINT" : "ARMOURED";
+    draw.text(160,29,status,TextAlign::Center,color);
+    if (target.maximum > 0 && !target.destroyed) {
+
+        const int fraction = int(int64_t(target.remaining)*2560/target.maximum);
+        for (int i=0;i<10;++i) draw.cell(121+i*8,39,std::clamp(fraction-i*256,0,256),color);
+        char health[32];
+        std::snprintf(health,sizeof(health),"TARGET %d%%",int((int64_t(target.remaining)*100+target.maximum-1)/target.maximum));
+        draw.text(160,53,health,TextAlign::Center,0xE8F0F0U);
     }
-    draw.text(160,17,target.name,TextAlign::Center);
-    draw.text(160,41,target.destroyed ? "DESTROYED" : target.vulnerable ? "VULNERABLE" : "PROTECTED",TextAlign::Center);
 }
 
 extern "C" int jfc_draw_modern_health(uint8_t* rdram, recomp_context* ctx) {

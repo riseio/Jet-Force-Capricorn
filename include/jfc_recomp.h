@@ -53,6 +53,17 @@ void jfc_bound_font_tiles(uint8_t* rdram, uint32_t definition) JFC_CAMERA_THROWS
 void jfc_ui_alpha_scope(uint8_t* rdram, uint32_t enter) JFC_CAMERA_THROWS;
 void jfc_ui_alpha_scope_at(uint8_t* rdram, uint32_t cursor_pointer, uint32_t enter) JFC_CAMERA_THROWS;
 float jfc_adjust_camera_fov(float authored) JFC_CAMERA_THROWS;
+float jfc_adjust_camera_height(uint8_t* rdram, uint32_t player, float authored) JFC_CAMERA_THROWS;
+float jfc_modern_aim_response(uint8_t* rdram, uint32_t player, float authored) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_begin(uint8_t* rdram, uint32_t player, int32_t x, int32_t y,
+    uint32_t weapon, uint32_t enabled) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_end(uint8_t* rdram) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_output_begin(uint8_t* rdram) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_line(uint32_t address) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_text(uint32_t address) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_output_end(void) JFC_CAMERA_THROWS;
+void jfc_cpu_cursor_clear(void) JFC_CAMERA_THROWS;
+int jfc_should_interpolate_target_reticle(void);
 void jfc_adjust_camera_distance(uint8_t* rdram, uint32_t player, uint32_t target, uint32_t components) JFC_CAMERA_THROWS;
 float jfc_camera_distance_units(uint8_t* rdram, uint32_t player, float radius) JFC_CAMERA_THROWS;
 float jfc_camera_distance_gain(uint8_t* rdram, uint32_t player, float gain) JFC_CAMERA_THROWS;

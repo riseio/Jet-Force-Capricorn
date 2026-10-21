@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace {
-std::atomic<float> lens_scale{1.0f}, distance_scale{1.0f};
+std::atomic<float> lens_scale{1.0f}, distance_scale{1.0f}, height_offset{0.0f};
 constexpr float radians = std::numbers::pi_v<float> / 180.0f;
 bool valid(uint32_t address, uint32_t bytes) {
     return (address & 0xE0000000U) == 0x80000000U && !(address & 3U) &&
@@ -32,7 +32,22 @@ void jfc::camera::set_fov(double degrees) {
 
 void jfc::camera::set_distance(double percent) {
     distance_scale.store(float(std::clamp(std::isfinite(percent) ? percent : default_distance,
-        50.0, 150.0) / 100.0), std::memory_order_relaxed);
+        min_distance, max_distance) / 100.0), std::memory_order_relaxed);
+}
+
+void jfc::camera::set_height(double units) {
+    height_offset.store(float(std::clamp(std::isfinite(units) ? units : default_height,
+        min_height, max_height)), std::memory_order_relaxed);
+}
+
+extern "C" float jfc_adjust_camera_height(uint8_t* rdram, uint32_t player, float authored) {
+    const float offset = height_offset.load(std::memory_order_relaxed);
+    if (offset == 0.0f) return authored;
+    if (!rdram || !valid(player, 4)) throw std::runtime_error("Invalid gameplay camera height owner");
+    if (MEM_BU(MEM_BU(0, player) & 3U, 0x800A3174U)) return authored;
+    const float adjusted = authored + offset;
+    if (!std::isfinite(adjusted)) throw std::runtime_error("Non-finite gameplay camera height");
+    return adjusted;
 }
 
 extern "C" float jfc_adjust_camera_fov(float authored) {

@@ -22,6 +22,7 @@ const char* try_tag_model_bone_dma(
 void set_modern_controls(bool enabled);
 bool modern_controls_enabled();
 void set_mouse_acceleration(bool enabled);
+void clear_mouse_aim();
 bool physical_aim_active(int controller);
 
 bool grounded_traversal_active(uint8_t* rdram, uint32_t player);

@@ -1,9 +1,12 @@
 #include "jfc_recomp.h"
 #include "title_logo_data.hpp"
+#include "title_logo.hpp"
 #include <array>
+#include <atomic>
 #include <stdexcept>
 
 namespace {
+std::atomic_bool original_title{false};
 void require(bool condition) {
     if (!condition) throw std::runtime_error("Title logo native asset layout is invalid");
 }
@@ -17,7 +20,12 @@ uint32_t physical_pointer(uint32_t value) {
 }
 }
 
+void jfc::branding::use_original_title(bool enabled) noexcept {
+    original_title.store(enabled, std::memory_order_relaxed);
+}
+
 extern "C" void jfc_install_title_logo(uint8_t* rdram) {
+    if (original_title.load(std::memory_order_relaxed)) return;
 
     const uint32_t sprite = MEM_W(148 * 4, 0x800FF3F8U);
     require(readable(sprite, 28));

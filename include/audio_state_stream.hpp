@@ -141,7 +141,7 @@ public:
         const auto read = readPosition.load(std::memory_order_acquire);
         const size_t count = size_t(written - read);
         if ((samples.size() & 1) || samples.size() > max_samples - count)
-            throw std::runtime_error("Audio backlog exceeds the safe two-minute limit");
+            throw std::runtime_error("Audio backlog exceeds the output queue capacity");
         const size_t end = size_t(written % max_samples);
         const size_t part = std::min(samples.size(), max_samples - end);
         std::copy_n(samples.begin(), part, ring.get() + end);

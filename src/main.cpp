@@ -48,6 +48,7 @@
 #include "audio_output.hpp"
 #include "audio_settings.hpp"
 #include "camera_settings.hpp"
+#include "title_logo.hpp"
 #include "librecomp/state.hpp"
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
@@ -102,8 +103,8 @@ extern "C" void jfc_complete_cpu_framebuffer(uint8_t* rdram, recomp_context* ctx
         const uint32_t stack = ctx ? uint32_t(ctx->r29) : 0;
         if (stack < 0x80000040U || stack > 0x80800000U)
             throw std::invalid_argument("No native stack for CPU image completion");
-        ultramodern::renderer::complete_cpu_framebuffer(rdram, stack - 0x40U, address & 0x1FFFFFFFU,
-            jfc::framebuffer_effects::pending());
+        ultramodern::renderer::complete_cpu_framebuffer(rdram, stack - 0x40U,
+            jfc::framebuffer_effects::frame_address(), jfc::framebuffer_effects::pending(address));
         jfc::framebuffer_effects::completed();
     } catch (const ultramodern::thread_terminated&) {
         throw;
@@ -222,6 +223,7 @@ constexpr char fast_throws_option[] = "fast_throws";
 constexpr char halo_health_option[] = "halo_health";
 constexpr char persistent_dropped_pickups_option[] = "persistent_dropped_pickups";
 constexpr char persistent_corpses_option[] = "persistent_corpses";
+constexpr char original_title_option[] = "original_title_screen";
 constexpr char shotgun_upgrade_option[] = "shotgun_upgrade";
 constexpr char flamethrower_upgrade_option[] = "flamethrower_upgrade";
 constexpr char shocker_upgrade_option[] = "shocker_upgrade";
@@ -378,6 +380,8 @@ void apply_deck_snapshot(const jfc::deck_grips::Edges& deck_edges) {
 void update_gfx(void*) {
 
     recompinput::handle_events();
+    if (recompinput::game_input_disabled() || !SDL_GetKeyboardFocus())
+        jfc::enhancements::clear_mouse_aim();
     jfc::deck_grips::poll(apply_deck_snapshot);
     const bool visuals_edge = recompinput::take_binding_press(recompinput::GameInput::TOGGLE_VISUALS);
     if (visuals_edge && !recompinput::binding::is_binding() && !recompinput::game_input_disabled()) {
@@ -559,6 +563,7 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
     }
 
     if (!result || !modern || recompinput::game_input_disabled()) {
+        if (controller == 0) jfc::enhancements::clear_mouse_aim();
         jfc::enhancements::sample_aim(controller, 0, 0, 0, 0);
         return result;
     }
@@ -570,7 +575,7 @@ bool get_input(int controller, uint16_t* buttons, float* x, float* y) {
     float mouse_x = 0.0f;
     float mouse_y = 0.0f;
     if (controller == 0) {
-        recompinput::get_mouse_deltas(&mouse_x, &mouse_y);
+        recompinput::take_mouse_deltas(&mouse_x, &mouse_y);
         mouse_y = jfc::modern_input::from_sdl_vertical(mouse_y);
     }
     jfc::enhancements::sample_aim(
@@ -1188,6 +1193,7 @@ void validate_config_schema(
         full_hud_migration_option,
     });
     require_config_options(qol, {
+        original_title_option,
         cutscene_skipping_option,
         invulnerable_tribals_option,
         persistent_tribal_rescues_option,
@@ -1324,6 +1330,10 @@ int run_application(
         true);
     recomp::config::Config& qol = recompui::config::create_config_tab(
         "QOL", qol_config_id, false);
+    qol.add_bool_option(original_title_option,
+        "Original Title Screen",
+        "Uses the original game's title artwork. Takes effect the next time the title screen opens.",
+        false);
     qol.add_bool_option(modern_health_option,
         "Modern Health Display",
         "Shows full reserve containers separately from the current container's fill. Health, damage and upgrades are unchanged.",
@@ -1467,8 +1477,8 @@ int run_application(
         "Restores 25% of each owned weapon's capacity when a boss phase or weak point is defeated, rounded up and capped at capacity. Opening a damage window does not refill ammo.",
         true);
     qol.add_bool_option(boss_weak_point_effect_option,
-        "Boss Weak-point Halos",
-        "Marks damageable boss regions with a pulsing green halo. It follows the moving weak point and disappears while protected or destroyed; normal lighting and hit flashes are unchanged.",
+        "Boss Weak-point Indicators",
+        "Small targeting brackets identify damageable boss regions. Armoured and destroyed regions are not marked. Native lighting and hit flashes are preserved.",
         true);
     qol.add_bool_option(mantis_final_vulnerability_option,
         "Open Mechantis Final Phase",
@@ -1623,6 +1633,12 @@ int run_application(
             jfc::enhancements::set_fog_strength_percent(
                 static_cast<int>(std::get<double>(value)));
         });
+    loaded_qol.add_option_change_callback(original_title_option,
+        [](auto value, auto, auto) {
+            jfc::branding::use_original_title(std::get<bool>(value));
+        });
+    jfc::branding::use_original_title(std::get<bool>(
+        loaded_qol.get_option_value(original_title_option)));
     loaded_qol.add_option_change_callback(
         cutscene_skipping_option,
         [](auto value, auto, auto) {
@@ -2055,6 +2071,7 @@ int main(int argc, char** argv) {
         result = EXIT_FAILURE;
     }
     shutdown_audio();
+    if (jfc::audio::output_failed()) result = EXIT_FAILURE;
     NFD_Quit();
     SDL_Quit();
     return result;

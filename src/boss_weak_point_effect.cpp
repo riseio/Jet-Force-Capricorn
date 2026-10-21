@@ -13,12 +13,13 @@
 
 namespace {
 constexpr uint32_t cursor_pointer = 0x800F2CC8U;
-constexpr unsigned segments = 16;
-constexpr std::array<std::array<float,2>,segments> circle{{
-    {1,0},{0.9238795f,0.3826834f},{0.7071068f,0.7071068f},{0.3826834f,0.9238795f},
-    {0,1},{-0.3826834f,0.9238795f},{-0.7071068f,0.7071068f},{-0.9238795f,0.3826834f},
-    {-1,0},{-0.9238795f,-0.3826834f},{-0.7071068f,-0.7071068f},{-0.3826834f,-0.9238795f},
-    {0,-1},{0.3826834f,-0.9238795f},{0.7071068f,-0.7071068f},{0.9238795f,-0.3826834f}}};
+constexpr unsigned segments = 8;
+
+constexpr std::array<std::array<std::array<float,2>,2>,segments> brackets{{
+    {{{-1,-0.6f},{-1,-1}}}, {{{-1,-1},{-0.6f,-1}}},
+    {{{0.6f,-1},{1,-1}}}, {{{1,-1},{1,-0.6f}}},
+    {{{1,0.6f},{1,1}}}, {{{1,1},{0.6f,1}}},
+    {{{-0.6f,1},{-1,1}}}, {{{-1,1},{-1,0.6f}}}}};
 constexpr std::array pushes{G_EX_PUSHPROJMATRIX_V1,G_EX_PUSHGEOMETRYMODE_V1,
     G_EX_PUSHOTHERMODE_V1,G_EX_PUSHCOMBINE_V1,G_EX_PUSHPRIMCOLOR_V1};
 constexpr std::array pops{G_EX_POPPRIMCOLOR_V1,G_EX_POPCOMBINE_V1,
@@ -94,9 +95,7 @@ extern "C" void jfc_draw_boss_weak_points(uint8_t* rdram,recomp_context*,uint32_
     emit(0xB6000000U,0xFFFFFFFFU);
     emit(0xB7000000U,1);
     emit(0xBC000002U,0);
-    const unsigned phase=uint32_t(MEM_W(0,0x800FE9F8U))%60U;
-    const float pulse=float(phase<=30?phase:60-phase)/30.0f;
-    emit(0xFA000000U,0x65ED9600U|uint32_t(180+75*pulse));
+    emit(0xFA000000U,0x99DDE8D8U);
     for(unsigned index=0;index<points.count;++index) {
         const auto& point=points.regions[index];
         std::array<float,3> center{},extent{};
@@ -107,7 +106,7 @@ extern "C" void jfc_draw_boss_weak_points(uint8_t* rdram,recomp_context*,uint32_
         std::array<float,3> radius{};
         for(unsigned column=0;column<3;++column)
             for(unsigned axis=0;axis<3;++axis) radius[column]+=std::abs(basis[column][axis])*extent[axis];
-        const float width=std::max(0.5f,std::min(radius[0],radius[1])*(0.025f+0.01f*pulse));
+        const float width=std::max(0.35f,std::min(radius[0],radius[1])*0.015f);
         for(unsigned axis=0;axis<3;++axis) center[axis]+=basis[2][axis]*(radius[2]+width);
         const uint32_t id=(point.identity & 0x1FFFFFFFU)>>2;
         emit(RT64::GBI_F3DDKR::withMatrixTagW0(0x01010040U,id),
@@ -118,7 +117,7 @@ extern "C" void jfc_draw_boss_weak_points(uint8_t* rdram,recomp_context*,uint32_
             line.generation = generation;
             line.width=width;
             for(unsigned endpoint=0;endpoint<2;++endpoint) {
-                const auto& angle=circle[(segment+endpoint)%segments];
+                const auto& angle=brackets[segment][endpoint];
                 for(unsigned axis=0;axis<3;++axis)
                     line.endpoints[endpoint*3+axis]=center[axis]+
                         basis[0][axis]*radius[0]*angle[0]+basis[1][axis]*radius[1]*angle[1];

@@ -34,6 +34,14 @@ void validate_memory_shape(std::span<const uint8_t> memory,
     if (memory.size() != state_rdram_size || bindings.size() != thread_count) {
         throw std::runtime_error("Save state requires 8 MiB RAM and the five initialized JFG threads");
     }
+
+    const auto heap_end = read_guest<uint32_t>(memory, 0x800FDDA8U);
+    const auto pool = read_guest<std::array<uint32_t, 4>>(memory, 0x800FD840U);
+    if (heap_end != 0x80600000U || pool[2] < 0x80000000U || pool[3] == 0 ||
+        uint64_t(pool[2]) + pool[3] != heap_end) {
+        throw std::runtime_error("Save state has an incompatible native heap; "
+            "load an ordinary game save and create a new state with this build");
+    }
     uint32_t seen = 0;
     uint32_t previous = 0;
     for (const auto& binding : bindings) {

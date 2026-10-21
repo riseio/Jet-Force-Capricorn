@@ -1,6 +1,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include "audio_output.hpp"
+#include "audio_playback_clock.hpp"
 #include "audio_state_stream.hpp"
 #include "save_state_codec.hpp"
 #include "librecomp/rsp.hpp"
@@ -22,7 +23,10 @@ std::unique_ptr<jfc::audio::StateStream> audio_stream;
 uint32_t audio_input_frequency = 32000, audio_output_frequency = 0;
 uint32_t audio_callback_frames = 0;
 bool audio_started = false;
+std::atomic_bool audio_failed{false};
 uint32_t audio_playback_pauses = 0;
+jfc::audio::PlaybackClock playback_clock;
+bool silent_playback_active = false;
 
 uint64_t audio_profile_stream = 0, audio_profile_callback = 0;
 std::mutex audio_mutex;
@@ -142,12 +146,22 @@ void start_audio_if_ready_locked() {
     }
 }
 
+void advance_silent_playback_locked(jfc::audio::PlaybackClock::Time now) {
+    const uint64_t frames = playback_clock.advance(now, true);
+    audio_output.discard(size_t(std::min<uint64_t>(frames, audio_output.size() / 2) * 2));
+}
+
 void pause_playback_locked() {
     if (!audio_stream)
         throw std::runtime_error("Audio output is unavailable for saving state");
     if (audio_playback_pauses == UINT32_MAX)
         throw std::overflow_error("Audio playback pause ownership overflow");
-    if (audio_playback_pauses++ != 0) return;
+    if (audio_playback_pauses != 0) { ++audio_playback_pauses; return; }
+    const auto now = jfc::audio::PlaybackClock::Clock::now();
+    if (silent_playback_active) advance_silent_playback_locked(now);
+    else playback_clock.advance(now, false);
+    playback_clock.set_paused(now, true);
+    ++audio_playback_pauses;
     if (audio_device) SDL_PauseAudioDevice(audio_device, 1);
     std::lock_guard phase_lock(audio_phase_mutex);
     audio_transaction_paused = true;
@@ -157,6 +171,7 @@ void pause_playback_locked() {
 void resume_playback_locked() noexcept {
     if (audio_playback_pauses == 0) std::terminate();
     if (--audio_playback_pauses != 0) return;
+    playback_clock.set_paused(jfc::audio::PlaybackClock::Clock::now(), false);
     std::lock_guard phase_lock(audio_phase_mutex);
     audio_transaction_paused = false;
     publish_audio_activity_locked();
@@ -190,6 +205,7 @@ void set_audio_activity(ultramodern::AudioActivity activity) {
 bool open_audio_locked(uint32_t frequency) {
     if (frequency == 0 ||
         frequency > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        SDL_SetError("Audio input frequency must be positive and fit a native integer");
         return false;
     }
     try {
@@ -222,8 +238,7 @@ bool open_audio_locked(uint32_t frequency) {
 namespace {
 void output_worker(std::stop_token stop) {
     using Clock = std::chrono::steady_clock;
-    auto last_silent = Clock::now(), next_retry = last_silent;
-    uint64_t fractional_frames = 0;
+    auto next_retry = Clock::now();
     while (!stop.stop_requested()) {
         {
             std::unique_lock wake(device_wake_mutex);
@@ -238,15 +253,9 @@ void output_worker(std::stop_token stop) {
             std::lock_guard lock(audio_mutex);
             const auto now = Clock::now();
             if (!audio_device && !audio_playback_pauses) {
-
-                const auto ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now - last_silent).count());
-                const auto seconds = ns / 1000000000;
-                const auto remainder = (ns % 1000000000) * 48000 + fractional_frames;
-                const auto frames = std::min<uint64_t>(seconds, 120) * 48000 + remainder / 1000000000;
-                fractional_frames = remainder % 1000000000;
-                audio_output.discard(size_t(frames * 2));
+                advance_silent_playback_locked(now);
             }
-            last_silent = now;
+            else if (!audio_playback_pauses) playback_clock.advance(now, false);
 
             paused = audio_playback_pauses != 0;
             retry = !paused && (reopen_device.exchange(false) || (!audio_device && now >= next_retry) ||
@@ -267,10 +276,18 @@ void output_worker(std::stop_token stop) {
             if (retired) SDL_CloseAudioDevice(retired);
             auto opened = open_output();
             std::lock_guard lock(audio_mutex);
+            const auto now = Clock::now();
+
+            if (silent_playback_active) {
+                if (!audio_playback_pauses) advance_silent_playback_locked(now);
+            }
+            else playback_clock.advance(now, false);
             audio_device = opened.device; audio_callback_frames = opened.frames;
+            silent_playback_active = !audio_device;
+
+            audio_started = false;
             start_audio_if_ready_locked();
-            last_silent = Clock::now(); next_retry = last_silent + std::chrono::seconds(2);
-            fractional_frames = 0;
+            next_retry = now + std::chrono::seconds(2);
         }
         if (test_pending.exchange(false)) {
             std::lock_guard lock(audio_mutex);
@@ -288,6 +305,7 @@ bool initialize_audio() {
     std::lock_guard lifecycle(device_lifecycle_mutex);
     if (device_worker.joinable()) return true;
     std::lock_guard lock(audio_mutex);
+    audio_failed.store(false, std::memory_order_relaxed);
     audio_output_frequency = 48000;
     {
         std::lock_guard phase_lock(audio_phase_mutex);
@@ -296,11 +314,16 @@ bool initialize_audio() {
         audio_profile_active = true;
     }
     if (!open_audio_locked(audio_input_frequency)) {
+        audio_failed.store(true, std::memory_order_relaxed);
         finish_audio_profile_locked();
         return false;
     }
     auto opened = open_output();
     audio_device = opened.device; audio_callback_frames = opened.frames;
+    silent_playback_active = !audio_device;
+    const auto now = jfc::audio::PlaybackClock::Clock::now();
+    playback_clock = jfc::audio::PlaybackClock(now);
+    playback_clock.set_paused(now, audio_playback_pauses != 0);
     reopen_device = false; test_pending = false;
     start_audio_if_ready_locked();
     SDL_AddEventWatch(watch_audio, nullptr);
@@ -324,11 +347,13 @@ void shutdown_audio() {
     if (audio_device) SDL_CloseAudioDevice(audio_device);
     audio_device = 0; audio_stream.reset(); finish_audio_profile_locked();
     audio_started = false; test_frames = 0;
+    silent_playback_active = false;
     audio_output_frequency = audio_callback_frames = 0;
     audio_output.clear();
 }
 
 uint64_t jfc::audio::output_revision() { return devices_revision.load(std::memory_order_acquire); }
+bool jfc::audio::output_failed() { return audio_failed.load(std::memory_order_relaxed); }
 jfc::audio::OutputDevices jfc::audio::output_devices() {
     std::lock_guard lock(devices_mutex); return devices;
 }
@@ -386,6 +411,7 @@ void queue_audio_samples(int16_t* samples, size_t sample_count, double main_volu
         RT64::AudioProfile::produced(audio_profile_stream, sample_count / 2, converted.size() / 2);
         start_audio_if_ready_locked();
     } catch (const std::exception& error) {
+        audio_failed.store(true, std::memory_order_relaxed);
         std::fprintf(stderr, "Audio output failed: %s\n", error.what());
         ultramodern::quit();
     }
@@ -424,6 +450,7 @@ void set_frequency(uint32_t frequency) {
         return;
     }
     if (!open_audio_locked(frequency)) {
+        audio_failed.store(true, std::memory_order_relaxed);
         std::fprintf(stderr, "Failed to change audio frequency: %s\n", SDL_GetError());
         ultramodern::quit();
     }
@@ -535,6 +562,7 @@ void jfc::state::AudioPause::commit() noexcept {
     audio_stream.swap(impl->prepared_stream);
     audio_input_frequency = impl->prepared_runtime.sample_rate;
     audio_output.commit(impl->prepared_queue, impl->prepared_count);
+    playback_clock.reset_queue(jfc::audio::PlaybackClock::Clock::now());
 
     audio_started = impl->prepared_count / 2 >= audio_callback_frames;
     std::copy(impl->prepared_dmem.begin(), impl->prepared_dmem.end(), dmem);

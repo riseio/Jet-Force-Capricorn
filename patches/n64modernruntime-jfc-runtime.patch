@@ -580,68 +580,70 @@ index 62656ad..452eba2 100644
 -        // sram
 +
 diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
-index 1200f77..f0cbcd2 100644
+index 1200f77..0a27341 100644
 --- a/librecomp/src/recomp.cpp
 +++ b/librecomp/src/recomp.cpp
-@@ -42,0 +43 @@ enum GameStatus {
+@@ -16,0 +17 @@
++#include <stdexcept>
+@@ -42,0 +44 @@ enum GameStatus {
 +    Initializing,
-@@ -47 +47,0 @@ enum GameStatus {
+@@ -47 +48,0 @@ enum GameStatus {
 -// Mutexes
-@@ -52 +51,0 @@ std::mutex mod_context_mutex{};
+@@ -52 +52,0 @@ std::mutex mod_context_mutex{};
 -// Global variables
-@@ -54 +53 @@ std::filesystem::path config_path;
+@@ -54 +54 @@ std::filesystem::path config_path;
 -// Maps game_id to the game's entry.
 +
-@@ -56 +55 @@ std::unordered_map<std::u8string, recomp::GameEntry> game_roms {};
+@@ -56 +56 @@ std::unordered_map<std::u8string, recomp::GameEntry> game_roms {};
 -// The global mod context.
 +
-@@ -58 +57 @@ std::unique_ptr<recomp::mods::ModContext> mod_context = std::make_unique<recomp:
+@@ -58 +58 @@ std::unique_ptr<recomp::mods::ModContext> mod_context = std::make_unique<recomp:
 -// The project's version.
 +
-@@ -60 +59 @@ recomp::Version project_version;
+@@ -60 +60 @@ recomp::Version project_version;
 -// The current game's save type.
 +
-@@ -80 +79 @@ bool recomp::register_game(const recomp::GameEntry& entry) {
+@@ -80 +80 @@ bool recomp::register_game(const recomp::GameEntry& entry) {
 -    // TODO verify that there's no game with this ID already.
 +
-@@ -201 +200 @@ bool check_stored_rom(const recomp::GameEntry& game_entry) {
+@@ -201 +201 @@ bool check_stored_rom(const recomp::GameEntry& game_entry) {
 -        // Incorrect hash, remove the stored ROM file if it exists.
 +
-@@ -229 +228 @@ bool recomp::load_stored_rom(std::u8string& game_id) {
+@@ -229 +229 @@ bool recomp::load_stored_rom(std::u8string& game_id) {
 -    
 +
-@@ -233 +232 @@ bool recomp::load_stored_rom(std::u8string& game_id) {
+@@ -233 +233 @@ bool recomp::load_stored_rom(std::u8string& game_id) {
 -        // The ROM no longer has the right hash, delete it.
 +
-@@ -254 +252,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -254 +253,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Find the 2 required periods.
-@@ -260 +257,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -260 +258,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Check that both were found.
-@@ -265,2 +262 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -265,2 +263 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Parse the 3 numbers formed by splitting the string via the periods.
 -    std::array<std::from_chars_result, 3> parse_results; 
 +    std::array<std::from_chars_result, 3> parse_results;
-@@ -273 +268,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -273 +269,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Check that the first two parsed correctly.
-@@ -277 +272 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -277 +273 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    
 +
-@@ -282 +276,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -282 +277,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Check that the third had a successful parse, but not necessarily read all the characters.
-@@ -287 +280,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -287 +281,0 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -    // Allow a plus or minus directly after the third number.
-@@ -292 +285 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+@@ -292 +286 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
 -        // Failed to parse, as nothing is allowed directly after the last number besides a plus or minus.
 +
-@@ -327 +319,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
+@@ -327 +320,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
 -    // Check if the ROM is already in the correct byte order.
-@@ -332 +323,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
+@@ -332 +324,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
 -    // Check if the ROM has been byteswapped in groups of 4 bytes.
-@@ -337 +327,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
+@@ -337 +328,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
 -    // Check if the ROM has been byteswapped in groups of 2 bytes.
-@@ -342 +331,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
+@@ -342 +332,0 @@ ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
 -    // No match found.
-@@ -373,0 +363,7 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+@@ -373,0 +364,7 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 +    if (game_entry.expected_rom_size != 0 &&
 +        rom_data.size() != game_entry.expected_rom_size) {
 +        return recomp::RomValidationError::IncorrectRomSize;
@@ -649,65 +651,65 @@ index 1200f77..f0cbcd2 100644
 +    if (rom_data.size() < 0x40) {
 +        return recomp::RomValidationError::NotARom;
 +    }
-@@ -375 +370,0 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+@@ -375 +371,0 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 -    // Pad the rom to the nearest multiple of 4 bytes.
-@@ -383,0 +379,3 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+@@ -383,0 +380,3 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 +            if (!game_entry.allow_byteswapped) {
 +                return recomp::RomValidationError::IncorrectByteOrder;
 +            }
-@@ -386,0 +385,3 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+@@ -386,0 +386,3 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 +            if (!game_entry.allow_byteswapped) {
 +                return recomp::RomValidationError::IncorrectByteOrder;
 +            }
-@@ -409 +410 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+@@ -409 +411 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 -    
 +
-@@ -426 +426,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -426 +427,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -    // Check if the FR bit changed
-@@ -428 +428 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -428 +429 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -        // Check if the FR bit was set
 +
-@@ -430 +430 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -430 +431 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -            // FR = 1, odd single floats point to their own registers
 +
-@@ -434 +434 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -434 +435 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -        // Otherwise, it was cleared
 +
-@@ -436 +436 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -436 +437 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -            // FR = 0, odd single floats point to the upper half of the previous register
 +
-@@ -441 +440,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -441 +441,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -        // Remove the FR bit from the changed bits as it's been handled
-@@ -445 +443,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -445 +444,0 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -    // If any other bits were changed, assert false as they're not handled currently
-@@ -451,2 +449 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
+@@ -451,2 +450 @@ extern "C" void cop0_status_write(recomp_context* ctx, gpr value) {
 -    
 -    // Update the status register in the context
 +
-@@ -479 +476 @@ void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t ar
+@@ -479 +477 @@ void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t ar
 -    
 +
-@@ -495 +492 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -495 +493 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Initialize the overlays
 +
-@@ -498 +494,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -498 +495,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Load overlays in the first 1MB
-@@ -501 +496,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -501 +497,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Initial 1MB DMA (rom address 0x1000 = physical address 0x10001000)
-@@ -504 +498,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -504 +499,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Read in any extra data from patches
-@@ -507 +500,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -507 +501,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Set up context floats
-@@ -511 +503,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -511 +504,0 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    // Initialize variables normally set by IPL3
-@@ -513 +505 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -513 +506 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    //constexpr int32_t osRomType = 0x80000304;
 +
-@@ -516,2 +508 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -516,2 +509 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    //constexpr int32_t osCicId = 0x80000310;
 -    //constexpr int32_t osVersion = 0x80000314;
 +
-@@ -519,5 +510,5 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+@@ -519,5 +511,5 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
 -    //constexpr int32_t osAppNMIBuffer = 0x8000031c;
 -    MEM_W(osTvType, 0) = 1; // NTSC
 -    MEM_W(osRomBase, 0) = 0xB0000000u; // standard rom base
@@ -718,43 +720,43 @@ index 1200f77..f0cbcd2 100644
 +    MEM_W(osRomBase, 0) = 0xB0000000u;
 +    MEM_W(osResetType, 0) = 0;
 +    MEM_W(osMemSize, 0) = 8 * 1024 * 1024;
-@@ -539,0 +531,3 @@ void recomp::start_game(const std::u8string& game_id, const std::string& game_mo
+@@ -539,0 +532,3 @@ void recomp::start_game(const std::u8string& game_id, const std::string& game_mo
 +    if (game_status.load() != GameStatus::None) {
 +        return;
 +    }
-@@ -542 +536 @@ void recomp::start_game(const std::u8string& game_id, const std::string& game_mo
+@@ -542 +537 @@ void recomp::start_game(const std::u8string& game_id, const std::string& game_mo
 -    game_status.store(GameStatus::Running);
 +    game_status.store(GameStatus::Initializing);
-@@ -550,0 +545,4 @@ bool ultramodern::is_game_started() {
+@@ -550,0 +546,4 @@ bool ultramodern::is_game_started() {
 +bool ultramodern::is_game_initialized() {
 +    return game_status.load() == GameStatus::Running;
 +}
 +
-@@ -551,0 +550 @@ std::atomic_bool exited = false;
+@@ -551,0 +551 @@ std::atomic_bool exited = false;
 +static std::stop_source host_shutdown;
-@@ -553,0 +553,2 @@ moodycamel::LightweightSemaphore graphics_shutdown_ready;
+@@ -553,0 +554,2 @@ moodycamel::LightweightSemaphore graphics_shutdown_ready;
 +std::stop_token ultramodern::shutdown_token() { return host_shutdown.get_token(); }
 +
-@@ -554,0 +556 @@ void ultramodern::quit() {
+@@ -554,0 +557 @@ void ultramodern::quit() {
 +    ultramodern::set_audio_activity(ultramodern::AudioActivity::Shutdown);
-@@ -556,2 +558,2 @@ void ultramodern::quit() {
+@@ -556,2 +559,2 @@ void ultramodern::quit() {
 -    GameStatus desired = GameStatus::None;
 -    game_status.compare_exchange_strong(desired, GameStatus::Quit);
 +    host_shutdown.request_stop();
 +    game_status.store(GameStatus::Quit);
-@@ -559,2 +560,0 @@ void ultramodern::quit() {
+@@ -559,2 +561,0 @@ void ultramodern::quit() {
 -    std::lock_guard<std::mutex> lock(current_game_mutex);
 -    current_game.reset();
-@@ -705,2 +705,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -705,2 +706,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -        // TODO refactor this to allow a project to specify what entrypoint function to run for a give game.
 -        case GameStatus::Running:
 +
 +        case GameStatus::Initializing:
-@@ -709,0 +710,3 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -709,0 +711,3 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +                    GameStatus preparing = GameStatus::Initializing;
 +                    game_status.compare_exchange_strong(preparing, GameStatus::None);
 +                    return false;
-@@ -714,0 +718,7 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -714,0 +719,7 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +                if (game_entry.prepare_callback && !game_entry.prepare_callback()) {
 +                    GameStatus preparing = GameStatus::Initializing;
 +                    game_status.compare_exchange_strong(preparing, GameStatus::None);
@@ -762,56 +764,59 @@ index 1200f77..f0cbcd2 100644
 +                }
 +                if (host_shutdown.stop_requested()) return true;
 +
-@@ -718,0 +729 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -718,0 +730 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +                if (host_shutdown.stop_requested()) return true;
-@@ -743 +754 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -743 +755 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -                            mod_error_stream << "\n";                                
 +                            mod_error_stream << "\n";
-@@ -746 +757,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -746 +758,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 -                        game_status.store(GameStatus::None);
 +                        GameStatus preparing = GameStatus::Initializing;
 +                        game_status.compare_exchange_strong(preparing, GameStatus::None);
-@@ -755,0 +768,5 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -755,0 +769,5 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +                GameStatus preparing = GameStatus::Initializing;
 +                if (!game_status.compare_exchange_strong(preparing, GameStatus::Running)) {
 +                    return true;
 +                }
 +
-@@ -768,0 +786,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -768,0 +787,2 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +        case GameStatus::Running:
 +            throw std::logic_error("Native game startup entered twice");
-@@ -769,0 +789 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
+@@ -769,0 +790 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 +    throw std::logic_error("Invalid native game startup status");
-@@ -778 +798 @@ bool recomp::eeprom_allowed() {
+@@ -778 +799 @@ bool recomp::eeprom_allowed() {
 -        save_type == SaveType::Eep4k || 
 +        save_type == SaveType::Eep4k ||
-@@ -785 +805 @@ bool recomp::sram_allowed() {
+@@ -785 +806 @@ bool recomp::sram_allowed() {
 -        save_type == SaveType::Sram || 
 +        save_type == SaveType::Sram ||
-@@ -791 +811 @@ bool recomp::flashram_allowed() {
+@@ -791 +812 @@ bool recomp::flashram_allowed() {
 -        save_type == SaveType::Flashram || 
 +        save_type == SaveType::Flashram ||
-@@ -839,2 +858,0 @@ void recomp::start(
+@@ -839,2 +859,0 @@ void recomp::start(
 -    // Allocate rdram without comitting it. Use a platform-specific virtual allocation function
 -    // that initializes to zero. Protect the region above the memory size to catch accesses to invalid addresses.
-@@ -848 +866 @@ void recomp::start(
+@@ -848 +867 @@ void recomp::start(
 -        // VirtualProtect returns 0 on failure.
 +
-@@ -858 +876 @@ void recomp::start(
+@@ -858 +877 @@ void recomp::start(
 -        // mprotect returns -1 on failure.
 +
-@@ -884 +901,0 @@ void recomp::start(
+@@ -868 +887 @@ void recomp::start(
+-        return;
++        throw std::runtime_error("Failed to allocate or protect native RDRAM");
+@@ -884 +902,0 @@ void recomp::start(
 -        // Loop until the game starts.
-@@ -895 +912 @@ void recomp::start(
+@@ -895 +913 @@ void recomp::start(
 -    graphics_shutdown_ready.signal();
 +    ultramodern::request_game_thread_shutdown();
-@@ -897,0 +915,2 @@ void recomp::start(
+@@ -897,0 +916,2 @@ void recomp::start(
 +
 +    graphics_shutdown_ready.signal();
-@@ -898,0 +918,2 @@ void recomp::start(
+@@ -898,0 +919,2 @@ void recomp::start(
 +    ultramodern::stop_audio();
 +    ultramodern::join_timer_thread();
-@@ -901,2 +922,7 @@ void recomp::start(
+@@ -901,2 +923,7 @@ void recomp::start(
 -    
 -    // Free rdram.
 +    {
@@ -821,10 +826,10 @@ index 1200f77..f0cbcd2 100644
 +        current_game_mode_id.clear();
 +    }
 +
-@@ -905 +931 @@ void recomp::start(
+@@ -905 +932 @@ void recomp::start(
 -    // VirtualFree returns zero on failure.
 +
-@@ -908 +934 @@ void recomp::start(
+@@ -908 +935 @@ void recomp::start(
 -    // munmap returns -1 on failure.
 +
 diff --git a/librecomp/src/sp.cpp b/librecomp/src/sp.cpp

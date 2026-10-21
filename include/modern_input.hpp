@@ -168,14 +168,16 @@ inline int32_t direct_look_angle_delta(
     float composed_mouse_delta,
     float elapsed_vi,
     double sensitivity_scale,
-    bool vertical
+    bool vertical,
+    double mouse_sensitivity_scale = 1.0
 ) {
     constexpr double angle_units_per_degree = 65536.0 / 360.0;
     constexpr double vi_per_second = 60.0;
     if (!std::isfinite(stick_axis) ||
         !std::isfinite(composed_mouse_delta) ||
         !std::isfinite(elapsed_vi) || elapsed_vi <= 0.0f ||
-        !std::isfinite(sensitivity_scale) || sensitivity_scale <= 0.0) {
+        !std::isfinite(sensitivity_scale) || sensitivity_scale <= 0.0 ||
+        !std::isfinite(mouse_sensitivity_scale) || mouse_sensitivity_scale < 0.0) {
         return 0;
     }
 
@@ -192,8 +194,8 @@ inline int32_t direct_look_angle_delta(
         -static_cast<double>(composed_mouse_delta) *
         static_cast<double>(mouse_degrees_per_composed_unit);
     return static_cast<int32_t>(std::clamp(
-        std::llround((stick_degrees + mouse_degrees) *
-            angle_units_per_degree * sensitivity_scale),
+        std::llround((stick_degrees * sensitivity_scale +
+            mouse_degrees * mouse_sensitivity_scale) * angle_units_per_degree),
         static_cast<long long>(std::numeric_limits<int16_t>::min()),
         static_cast<long long>(std::numeric_limits<int16_t>::max())));
 }

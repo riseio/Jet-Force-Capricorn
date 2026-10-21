@@ -6,6 +6,7 @@ namespace jfc::camera_settings {
 namespace {
 constexpr const char* fov_key = "camera_fov";
 constexpr const char* distance_key = "camera_distance";
+constexpr const char* height_key = "camera_height";
 void reset(const char* key, double value) {
     auto& config = recompui::config::get_graphics_config();
 
@@ -15,13 +16,18 @@ void reset(const char* key, double value) {
 void add_options(recomp::config::Config& config) {
     config.add_number_option(fov_key, "Field of View", "Vertical field of view for ordinary gameplay. Aiming retains its zoom; wide and ultrawide screens expand the horizontal view.",
         30, 89, 1, 0, false, camera::default_fov);
-    config.add_number_option(distance_key, "Camera Distance", "Moves the gameplay camera closer or farther away. 100% is the original distance; walls and scoped aiming retain native camera control.",
-        50, 150, 5, 0, true, camera::default_distance);
+    config.add_number_option(distance_key, "Camera Distance", "Moves the gameplay camera closer or farther away, including beyond the original view. Walls and scoped aiming retain native camera control.",
+        camera::min_distance, camera::max_distance, 5, 0, true, camera::default_distance);
+    config.add_number_option(height_key, "Camera Height", "Raises or lowers the gameplay camera. Zero retains its original height; walls and scoped aiming retain native camera control.",
+        camera::min_height, camera::max_height, 5, 0, false, camera::default_height);
     config.add_option_change_callback(fov_key, [](auto value, auto, auto context) {
         if (context != recomp::config::OptionChangeContext::Temporary) camera::set_fov(std::get<double>(value));
     });
     config.add_option_change_callback(distance_key, [](auto value, auto, auto context) {
         if (context != recomp::config::OptionChangeContext::Temporary) camera::set_distance(std::get<double>(value));
+    });
+    config.add_option_change_callback(height_key, [](auto value, auto, auto context) {
+        if (context != recomp::config::OptionChangeContext::Temporary) camera::set_height(std::get<double>(value));
     });
 }
 void create_resets(recompui::ContextId context, recompui::Element* parent) {
@@ -34,5 +40,7 @@ void create_resets(recompui::ContextId context, recompui::Element* parent) {
     fov->add_pressed_callback([] { reset(fov_key, camera::default_fov); });
     auto* distance = context.create_element<recompui::Button>(group, "Reset Camera Distance", recompui::ButtonStyle::Secondary);
     distance->add_pressed_callback([] { reset(distance_key, camera::default_distance); });
+    auto* height = context.create_element<recompui::Button>(group, "Reset Camera Height", recompui::ButtonStyle::Secondary);
+    height->add_pressed_callback([] { reset(height_key, camera::default_height); });
 }
 }
